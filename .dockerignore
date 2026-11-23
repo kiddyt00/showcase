@@ -1,0 +1,16 @@
+node_modules
+**/node_modules
+**/.next
+.git
+data
+*.db
+*.db-shm
+*.db-wal
+public/videos
+Dockerfile
+.dockerignore
+README.md
+.env
+.env.*
+*.log
+tsconfig.tsbuildinfo

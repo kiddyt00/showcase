@@ -1,0 +1,38 @@
+{
+  "name": "@showcase/core",
+  "version": "0.1.0",
+  "private": true,
+  "description": "共享内核：类型 / 存储层 / AI 分析 / 图表 / 视频 / 鉴权（TS 源码直出，由各 app transpile）",
+  "exports": {
+    "./types": "./src/types.ts",
+    "./paths": "./src/paths.ts",
+    "./store": "./src/store.ts",
+    "./agent": "./src/agent.ts",
+    "./agent-tools": "./src/agent-tools.ts",
+    "./analyzers": "./src/analyzers/index.ts",
+    "./diagrams": "./src/diagrams.ts",
+    "./redact": "./src/redact.ts",
+    "./auth": "./src/auth.ts",
+    "./safe-fetch": "./src/safe-fetch.ts",
+    "./mode": "./src/mode.ts",
+    "./deepseek": "./src/deepseek.ts",
+    "./video/pipeline": "./src/video/pipeline.ts",
+    "./video/queue": "./src/video/queue.ts",
+    "./video/script": "./src/video/script.ts",
+    "./video/tts": "./src/video/tts.ts",
+    "./video/types": "./src/video/types.ts"
+  },
+  "dependencies": {
+    "@remotion/bundler": "^4.0.545",
+    "@remotion/renderer": "^4.0.545",
+    "better-sqlite3": "^13.2.0",
+    "msedge-tts": "^2.1.1",
+    "remotion": "^4.0.545"
+  },
+  "devDependencies": {
+    "@types/better-sqlite3": "^9.6.0",
+    "@types/node": "^20",
+    "@types/react": "^19",
+    "typescript": "^5"
+  }
+}
