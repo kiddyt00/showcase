@@ -1,6 +1,8 @@
 # ---------- deps：安装依赖（含 better-sqlite3 原生二进制预编译） ----------
 FROM node:22-slim AS deps
 WORKDIR /app
+# better-sqlite3 需要 python3/make/g++ 做原生编译
+RUN apt-get update && apt-get install -y --no-install-recommends python3 make g++ && rm -rf /var/lib/apt/lists/*
 RUN corepack enable
 COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
 COPY apps/site/package.json apps/site/package.json
