@@ -4,10 +4,14 @@ import Link from "next/link";
 import { Markdown } from "./Markdown";
 import Toc, { type TocItem } from "./Toc";
 import TocChips from "./TocChips";
+import FigureImage from "./FigureImage";
+import CodeBlock from "./CodeBlock";
 import DiagramFrame from "./DiagramFrame";
 import FlowDiagram from "@/components/FlowDiagram";
 import { CountUp } from "./Motion";
+import ProvenancePanel from "./ProvenancePanel";
 import { readMinutes, categoryLabel, getCollections } from "@/lib/collections";
+import { PROVENANCE_METADATA_KEY } from "@showcase/core/provenance";
 
 export default function PageView({ page }: { page: PageContent }) {
   const tocItems: TocItem[] = page.sections.map((s, i) => ({
@@ -16,6 +20,19 @@ export default function PageView({ page }: { page: PageContent }) {
   }));
   const minutes = readMinutes(page.sections);
   const collection = getCollections().find((c) => c.id === page.category);
+  // 代码块计数（Markdown 内 ``` 成对出现记一块 + 章节级 code 字段）：
+  // listingSeeds[i] = 前 i 节的代码块总数 + 1（本节起始编号），全页 Listing 流水号连续
+  const countMdBlocks = (t?: string) => (t ? ((t.match(/```/g)?.length ?? 0) / 2) : 0);
+  const listingSeeds: number[] = [];
+  {
+    let acc = 0;
+    for (const s of page.sections) {
+      listingSeeds.push(acc + 1);
+      acc += countMdBlocks(s.body);
+      if (s.bullets) acc += s.bullets.reduce((m, b) => m + countMdBlocks(b), 0);
+      acc += s.code?.content ? 1 : 0;
+    }
+  }
 
   return (
     <div className="mx-auto flex max-w-5xl gap-10 px-4 py-10">
@@ -91,11 +108,16 @@ export default function PageView({ page }: { page: PageContent }) {
         {/* 中屏章节锚点条（lg–xl）：xl 起由右侧 TOC 侧栏接管 */}
         <TocChips items={tocItems} />
 
-        {/* 元信息 */}
-        {Object.keys(page.metadata).length > 0 && (
+        {/* 元信息（provenance 单独用 ProvenancePanel 呈现，这里排除其键避免裸 JSON 上屏） */}
+        {Object.entries(page.metadata).filter(([k]) => k !== PROVENANCE_METADATA_KEY).length > 0 && (
           <div className="mb-8 grid grid-cols-2 gap-3 rounded-[var(--radius)] border border-[var(--border)] bg-[var(--card)] p-4 sm:grid-cols-4">
             {Object.entries(page.metadata)
-              .filter(([, v]) => v !== undefined && v !== "")
+              .filter(
+                ([k, v]) =>
+                  k !== PROVENANCE_METADATA_KEY && // 诞生记档案走 ProvenancePanel，不进元信息网格
+                  v !== undefined &&
+                  v !== ""
+              )
               .slice(0, 8)
               .map(([k, v]) => {
                 // 逗号分隔的长列表（如 Topics）转成易读分隔展示，避免长 token 撑破网格
@@ -184,8 +206,8 @@ export default function PageView({ page }: { page: PageContent }) {
           </section>
         ) : null}
 
-        {/* 章节正文（锚点供 TOC 使用） */}
-        <div className="space-y-10">
+        {/* 章节正文（锚点供 TOC 使用；xl:clear-both 保证上一章浮动配图不侵入本章节块） */}
+        <div className="space-y-10 [&>section]:xl:clear-both">
           {page.sections.map((section, i) => (
             <section key={i} id={`sec-${i}`} className="scroll-mt-20">
               {/* 章节标题：kicker 行（小号大写 SECTION NN + 章节序号）+ 衬线标题 */}
@@ -197,46 +219,48 @@ export default function PageView({ page }: { page: PageContent }) {
                   {section.heading}
                 </h2>
               </div>
-              {section.body && <Markdown text={section.body} />}
-              {/* 章节配图（免费图库自动匹配）+ 图注 */}
+              {section.body && <Markdown text={section.body} listingStart={listingSeeds[i]} />}
+              {/* 章节配图（免费图库自动匹配）+ 图注（印刷惯例：图 N · caption，xl 屏文绕排） */}
               {section.image ? (
-                <figure className="my-5">
-                  {/* eslint-disable-next-line @next/next/no-img-element */}
-                  <img
-                    src={section.image}
-                    alt={section.imageCaption || section.heading}
-                    loading="lazy"
-                    decoding="async"
-                    className="w-full rounded-[var(--radius)] border border-[var(--border)] object-cover"
-                  />
-                  {section.imageCaption ? (
-                    <figcaption className="mt-1.5 text-center text-xs text-muted">
-                      {section.imageCaption}
-                    </figcaption>
-                  ) : null}
-                </figure>
+                <FigureImage
+                  src={section.image}
+                  alt={section.imageCaption || section.heading}
+                  caption={section.imageCaption}
+                  n={i + 1}
+                />
               ) : null}
               {section.bullets?.length ? (
                 <ul className="mt-2 space-y-1">
                   {section.bullets.map((b, j) => (
                     <li key={j} className="ml-5 list-disc text-[15px] leading-[1.85] text-[var(--fg)]">
-                      <Markdown text={b} />
+                      <Markdown
+                        text={b}
+                        listingStart={listingSeeds[i] + countMdBlocks(section.body) + j}
+                      />
                     </li>
                   ))}
                 </ul>
               ) : null}
               {section.code?.content ? (
-                <pre className="mt-3 overflow-x-auto rounded-[var(--radius)] border border-[var(--border)] bg-[var(--card)] p-4 text-xs text-[var(--fg)]">
-                  <code>{section.code.content}</code>
-                </pre>
+                <CodeBlock
+                  code={section.code.content}
+                  n={listingSeeds[i] + countMdBlocks(section.body) + (section.bullets?.length ?? 0)}
+                />
               ) : null}
             </section>
           ))}
         </div>
 
-        <footer className="mt-12 border-t border-[var(--border)] pt-4 text-xs text-muted">
-          由 Agent（{page.generator}）自动分析生成 · {page.createdAt.slice(0, 10)}
-        </footer>
+        {/* 诞生记：生成过程透明化（折叠面板；无 provenance 的旧页面自动退回一行免责说明） */}
+        {page.metadata[PROVENANCE_METADATA_KEY] !== undefined ? (
+          <footer className="mt-12">
+            <ProvenancePanel provenance={page.metadata[PROVENANCE_METADATA_KEY]} slug={page.slug} />
+          </footer>
+        ) : (
+          <footer className="mt-12 border-t border-[var(--border)] pt-4 text-xs text-muted">
+            由 Agent（{page.generator}）自动分析生成 · {page.createdAt.slice(0, 10)}
+          </footer>
+        )}
       </article>
 
       {/* 右侧悬浮 TOC（xl 屏幕以上显示） */}

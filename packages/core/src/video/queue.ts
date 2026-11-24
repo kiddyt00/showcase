@@ -3,7 +3,8 @@
  * - 全进程同时只允许 1 个渲染任务（Remotion/ffmpeg 资源重）
  * - rendering 状态超过 15 分钟的任务视为僵死，惰性置为 failed 允许重试
  */
-import { db, upsertVideoJob, getVideoJob, getPage, setVideoJobProgress } from "../store";
+import { db, upsertVideoJob, getVideoJob, getPage, setVideoJobProgress, updatePageMetadata } from "../store";
+import { decodeProvenance, encodeProvenance, PROVENANCE_METADATA_KEY } from "../provenance";
 import type { Orientation, VideoMode } from "./types";
 
 export const MAX_CONCURRENT_RENDERS = 1;
@@ -81,6 +82,7 @@ export async function startRender(
     createdAt: new Date().toISOString(),
   };
   upsertVideoJob(job);
+  const renderStartedMs = Date.now(); // 渲染耗时起点（两种引擎路径共用）
   const pipeline =
     mode === "hyperframes"
       ? renderVideoHyperframes(slug, orientation, (p) => setVideoJobProgress(slug, orientation, p))
@@ -88,6 +90,7 @@ export async function startRender(
   pipeline
     .then(({ path, scenes }) => {
       upsertVideoJob({ ...job, status: "done", progress: 100, videoPath: path, scenes });
+      writeProvenanceVideoMs(slug, orientation, Date.now() - renderStartedMs, "done");
     })
     .catch((err) => {
       upsertVideoJob({
@@ -95,7 +98,32 @@ export async function startRender(
         status: "failed",
         error: err instanceof Error ? err.message : String(err),
       });
+      writeProvenanceVideoMs(slug, orientation, Date.now() - renderStartedMs, "failed");
     })
     .finally(() => releaseRenderSlot());
   return "started";
+}
+
+/** 渲染结束（成功或失败）后回写诞生记的视频耗时与状态：读改 metadata.provenance 单键，页面不存在时静默跳过 */
+function writeProvenanceVideoMs(
+  slug: string,
+  orientation: Orientation,
+  elapsedMs: number,
+  status: "done" | "failed"
+): void {
+  try {
+    const page = getPage(slug);
+    if (!page) return;
+    const prov = decodeProvenance(page.metadata[PROVENANCE_METADATA_KEY]);
+    if (!prov) return; // 旧页面无 provenance：不补造，保持静默
+    if (orientation === "portrait") {
+      prov.video.portraitMs = elapsedMs;
+    } else {
+      prov.video.landscapeMs = elapsedMs;
+    }
+    prov.video.status = status; // 最近一次渲染结果（横竖版各自回写，后写覆盖）
+    updatePageMetadata(slug, PROVENANCE_METADATA_KEY, encodeProvenance(prov));
+  } catch {
+    /* 回写失败只影响诞生记展示，不碰渲染结果 */
+  }
 }

@@ -1,19 +1,31 @@
-/** 极简 Markdown 渲染（避免引入依赖）：标题/粗体/行内代码/代码块/有序+无序列表/引用块/链接 */
+/** 极简 Markdown 渲染（避免引入依赖）：标题/粗体/行内代码/代码块/有序+无序列表/引用块/表格/链接 */
 import React from "react";
+import CodeBlock from "./CodeBlock";
+import TableScroll from "./TableScroll";
 
-export function Markdown({ text }: { text: string }) {
+/** 已知语言表（≤8 字符）：命中时才剥离 ``` 首行语言标注并显示题注；其余（如文件名、URL）原样保留 */
+const KNOWN_LANGS = new Set([
+  "ts", "tsx", "js", "jsx", "json", "css", "scss", "less", "html", "xml", "svg",
+  "bash", "sh", "shell", "zsh", "python", "sql", "rust", "go", "c", "cpp", "java", "rb", "yaml", "yml", "toml", "ini", "diff", "text", "md", "php", "swift", "kt",
+]);
+
+/** Markdown 组件：可传起始代码块编号（列表项等多处渲染时保持全页流水号连续） */
+export function Markdown({ text, listingStart = 1 }: { text: string; listingStart?: number }) {
   const blocks = text.split(/```/);
+  let listing = listingStart;
   return (
     <>
       {blocks.map((block, i) =>
         i % 2 === 1 ? (
-          // 奇数索引为代码块；去掉语言标注行
-          <pre
-            key={i}
-            className="my-3 overflow-x-auto rounded-lg border border-[var(--border)] bg-[var(--card)] p-4 text-xs leading-relaxed text-[var(--fg)]"
-          >
-            <code>{block.replace(/^\w*\n/, "").replace(/^\n+|\n+$/g, "")}</code>
-          </pre>
+          // 奇数索引为代码块；仅当首行语言标注命中已知语言表时剥离并作题注，否则整体保留
+          (() => {
+            const [first = "", ...rest] = block.replace(/^\n+/, "").split("\n");
+            const token = first.trim();
+            const known = /^[a-zA-Z0-9+#-]{1,8}$/.test(token) && KNOWN_LANGS.has(token.toLowerCase());
+            const code = (known ? rest.join("\n") : block).replace(/^\n+|\n+$/g, "");
+            const lang = known ? token.toLowerCase() : undefined;
+            return <CodeBlock key={i} code={code} lang={lang} n={listing++} />;
+          })()
         ) : (
           <div key={i}>{renderInline(block)}</div>
         )
@@ -83,10 +95,7 @@ function renderInline(text: string): React.ReactNode[] {
       if (rows.length >= 2) {
         const [head, ...body] = rows;
         out.push(
-          <div
-            key={key}
-            className="my-3 overflow-x-auto rounded-[var(--radius)] border border-[var(--border)]"
-          >
+          <TableScroll key={key}>
             <table className="w-full border-collapse text-left text-sm">
               <thead>
                 <tr className="bg-[var(--card)]">
@@ -106,7 +115,7 @@ function renderInline(text: string): React.ReactNode[] {
                     {r.map((c, ci) => (
                       <td
                         key={ci}
-                        className="px-3 py-2 align-top text-[13px] leading-relaxed text-[var(--fg)]"
+                        className="whitespace-nowrap px-3 py-2 align-top text-[13px] leading-relaxed text-[var(--fg)]"
                       >
                         {formatSpans(c)}
                       </td>
@@ -115,7 +124,7 @@ function renderInline(text: string): React.ReactNode[] {
                 ))}
               </tbody>
             </table>
-          </div>
+          </TableScroll>
         );
         continue;
       }

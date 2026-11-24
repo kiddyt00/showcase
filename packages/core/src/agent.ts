@@ -8,6 +8,7 @@ import { chat, extractJson } from "./deepseek";
 import { uniqueSlugFrom, listPageSummaries, getPage } from "./store";
 import { redactPageContent } from "./redact";
 import { renderPageDiagrams } from "./diagrams";
+import { createTracker, encodeProvenance, PROVENANCE_METADATA_KEY } from "./provenance";
 
 const SYSTEM_PROMPT = `你是一个面向科普读者和技术爱好者的内容分析引擎。产出结构化中文分析报告，用于生成高质量的知识分享网页。
 
@@ -89,9 +90,12 @@ export async function runAnalysis(
   signal?: AbortSignal
 ): Promise<AnalyzeResult> {
   const analyzer = pickAnalyzer(req);
+  // 诞生记计时器：逐阶段打点，结束后组装 Provenance 写入 metadata（queueMs/totalMs/jobId 由队列层回填）
+  const prov = createTracker();
 
   // 1. 抓取素材
   onStage?.("抓取素材", 5);
+  prov.stage("collect");
   const material = await analyzer.collect(req.input);
   onStage?.("AI 分析生成中", 20);
 
@@ -131,6 +135,7 @@ export async function runAnalysis(
     diagrams?: unknown[];
   };
   for (let attempt = 0; ; attempt++) {
+    prov.llm.draftAttempts++; // 每轮 LLM 调用（起草 + 修复重试）都计入
     const raw = (await chat(messages, { jsonMode: true, signal })).content;
     try {
       parsed = extractJson<{
@@ -148,10 +153,12 @@ export async function runAnalysis(
     } catch (err) {
       if (attempt >= 2) {
         // 两轮修复均失败：用素材确定性兜底（章节来自 analyzer 素材本身），不让任务直接死掉
+        prov.llm.fallbackUsed = true; // 记录降级：本次产出为素材兜底文章
         console.warn("[agent] 两轮 JSON 修复失败，降级为素材兜底文章:", err instanceof Error ? err.message : err);
         parsed = fallbackArticleFromMaterial(analyzer, material, req.input);
         break;
       }
+      prov.llm.jsonRepairs++; // JSON 解析失败 → 反馈给 LLM 重修一轮
       console.warn("[agent] 首轮输出不是合法 JSON，反馈重试:", err instanceof Error ? err.message : err);
       messages.push({
         role: "assistant" as const,
@@ -190,10 +197,15 @@ export async function runAnalysis(
 
   // 页面保存前渲染图表；失败回喂 LLM 修正 spec，最多重试 1 次
   onStage?.("渲染图表", 70);
+  prov.stage("diagram-render");
+  prov.diagrams.requested = (page.diagrams ?? []).length; // 先取 requested 快照：渲染器会剔除失败图
   let renderResult = await renderPageDiagrams(page);
+  prov.diagrams.initialFailures = renderResult.failed.length;
   if (renderResult.failed.length) {
+    prov.stage("diagram-fix");
     for (const f of renderResult.failed) {
       try {
+        prov.diagrams.fixCalls++; // 每次 LLM spec 修正调用
         const fixRaw = (
           await chat(
             [
@@ -211,12 +223,15 @@ export async function runAnalysis(
           )
         ).content;
         f.diagram.spec = extractJson(fixRaw);
+        prov.diagrams.fixedIds.push(f.diagram.id); // spec 修正成功，等重渲染确认
       } catch (fixErr) {
         console.warn("[diagram] spec 修正失败:", fixErr);
       }
     }
     // 修正后整体重渲染一轮
+    prov.diagrams.retried = true; // 触发过修正重渲染轮
     renderResult = await renderPageDiagrams(page);
+    prov.diagrams.finalFailures = renderResult.failed.length;
     for (const f of renderResult.failed) {
       console.warn(`[diagram] ${f.diagram.id} 重试仍失败: ${f.error}`);
     }
@@ -224,14 +239,17 @@ export async function runAnalysis(
 
   // 章节配图：LLM 输出的 imageQuery → Pexels 下载 → 回填 image/imageCaption（免费图库，无 key 时跳过）
   onStage?.("抓取配图", 80);
+  prov.stage("images");
   try {
     const { fetchStockPhotoRel } = await import("./video/stock");
     for (const sec of page.sections) {
       const q = (sec as Section & { imageQuery?: unknown }).imageQuery;
       if (typeof q !== "string" || !q.trim()) continue;
+      prov.images.queries.push(q); // 实际发起下载的搜索词
       const rel = await fetchStockPhotoRel(q, "landscape", `videos/${page.slug}-assets/img-${page.sections.indexOf(sec)}.jpg`);
       if (rel) {
         sec.image = rel;
+        prov.images.downloaded++; // 成功下载并回填
         const cap = (sec as Section & { imageCaption?: unknown }).imageCaption;
         if (typeof cap === "string" && cap.trim()) sec.imageCaption = cap.trim().slice(0, 40);
         console.warn(`[article] 章节「${sec.heading.slice(0, 16)}」配图 ${rel}（${q}）`);
@@ -243,7 +261,17 @@ export async function runAnalysis(
 
   // 发布前敏感信息脱敏：直接使用返回的新对象
   onStage?.("发布", 90);
-  const { page: redacted } = redactPageContent(page);
+  prov.stage("redact");
+  const { page: redacted, hits } = redactPageContent(page);
+  prov.redact.hits = hits; // 脱敏规则命中记录
+
+  // 诞生记组装完成：作为 metadata 单键写入（JSON 字符串，站点端 decodeProvenance 还原）
+  prov.stage("finalize");
+  const provenance = prov.finalize();
+  redacted.metadata = {
+    ...redacted.metadata,
+    [PROVENANCE_METADATA_KEY]: encodeProvenance(provenance),
+  };
 
   return { page: redacted, analyzer };
 }

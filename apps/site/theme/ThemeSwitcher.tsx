@@ -16,6 +16,9 @@ export default function ThemeSwitcher({ themes }: { themes: ThemeOption[] }) {
   const [error, setError] = useState<string | null>(null);
   const [open, setOpen] = useState(false);
 
+  // 摘要显示中文 label（如 "Editorial · 杂志编辑"），内部名仅作存取键
+  const currentLabel = themes.find((t) => t.name === themeName)?.label ?? themeName;
+
   async function pick(name: string) {
     if (name === themeName || busy) return;
     setBusy(true);
@@ -49,8 +52,8 @@ export default function ThemeSwitcher({ themes }: { themes: ThemeOption[] }) {
       open={open}
       onToggle={(e) => setOpen((e.target as HTMLDetailsElement).open)}
     >
-      <summary className="cursor-pointer list-none underline decoration-dotted underline-offset-2 hover:text-[var(--accent)]">
-        主题: {themeName}
+      <summary className="cursor-pointer list-none whitespace-nowrap underline decoration-dotted underline-offset-2 hover:text-[var(--accent)]">
+        主题: {currentLabel}
       </summary>
       <div className="absolute bottom-full left-1/2 z-20 mb-2 -translate-x-1/2 rounded-[var(--radius)] border border-[var(--border)] bg-[var(--card)] p-1 shadow-lg">
         {themes.map((t) => (
@@ -69,8 +72,9 @@ export default function ThemeSwitcher({ themes }: { themes: ThemeOption[] }) {
           预览可加 <Link className="underline" href="/?theme=editorial">?theme=</Link> 参数
         </p>
       </div>
+      {/* 错误提示：max-w-[calc(100vw-2rem)] + 居中收窄，窄屏不撑破视口/横滑 */}
       {error && (
-        <p className="absolute bottom-full left-1/2 mb-8 w-56 -translate-x-1/2 text-center text-[10px] text-[var(--accent)]">
+        <p className="absolute bottom-full left-1/2 mb-8 max-w-[calc(100vw-2rem)] w-max -translate-x-1/2 rounded-[var(--radius)] bg-[var(--card)] px-2.5 py-1.5 text-center text-[10px] leading-relaxed text-[var(--accent)]">
           {error}
         </p>
       )}

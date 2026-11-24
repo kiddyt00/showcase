@@ -4,17 +4,29 @@
  * Agent 管理控制台 —— DeepSeek Harness 风格深色工作台
  * 左栏：会话列表 + 快捷指令；中栏：对话主流；右栏：页面元素面板
  * 移动端（<lg）：Tab 切换「对话 / 元素」；Cmd/Ctrl+K 命令面板
+ * R3 交互修复：字段级保存反馈（idle/saving/saved/error）、滚动跟随 + 「回到底部」浮标、
+ * busy 时 Enter 排队补发、删除确认对话框、消息列表稳定 key
  */
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { PageContent } from "@showcase/core/types";
 import type { AnalyzeJob } from "@showcase/core/store";
 import { Markdown } from "@/components/Markdown";
 
 interface Msg {
+  /** 稳定 id：crypto.randomUUID 本地生成（历史恢复时补齐），消息列表 key 用 */
+  id: string;
   role: "user" | "assistant";
   content: string;
   tools?: string[];
   toolEvents?: ToolEvent[];
+}
+
+/** 允许缺 id 的消息草稿（服务端历史不带 id） */
+type MsgDraft = Omit<Msg, "id"> & { id?: string };
+
+/** 补齐稳定 id（crypto.randomUUID），列表 key 不再依赖数组下标 */
+function toMsg(draft: MsgDraft): Msg {
+  return { ...draft, id: draft.id ?? crypto.randomUUID() };
 }
 
 interface ToolEvent {
@@ -45,20 +57,31 @@ const SESSIONS_KEY = "showcase-sessions";
 
 const SITE_URL = process.env.NEXT_PUBLIC_SITE_URL || "http://localhost:3100";
 
+/** 自动滚动跟随的判定阈值：距底部超过该值视为用户在回看，不拽底 */
+const STICK_THRESHOLD_PX = 120;
+
 export default function ChatConsole() {
   const [sessionId, setSessionId] = useState<string | null>(null);
   const [sessions, setSessions] = useState<string[]>([]);
   const [messages, setMessages] = useState<Msg[]>([]);
   const [input, setInput] = useState("");
   const [busy, setBusy] = useState(false);
+  const [pending, setPending] = useState<string | null>(null); // busy 期间排队的消息（单槽）
   const [currentSlug, setCurrentSlug] = useState<string | undefined>();
   const [page, setPage] = useState<PageContent | null>(null);
-  const [saveError, setSaveError] = useState("");
   const [adminToken, setAdminToken] = useState("");
   const [mobileTab, setMobileTab] = useState<"chat" | "panel">("chat");
   const [paletteOpen, setPaletteOpen] = useState(false);
   const [jobs, setJobs] = useState<AnalyzeJob[]>([]);
+  const [showJump, setShowJump] = useState(false); // 「↓ 回到底部」浮标
+  const [deleteTarget, setDeleteTarget] = useState<string | null>(null); // 删除确认对话框目标
+  const [deleting, setDeleting] = useState(false);
   const jobsRef = useRef<AnalyzeJob[]>([]);
+  const busyRef = useRef(false); // 与 busy 同步，供键盘事件读最新值（避免双 Enter 竞态）
+  const pendingRef = useRef<string | null>(null); // 与 pending 同步，供 send() finally 读取
+  const stickBottomRef = useRef(true); // 距底 ≤120px 时保持自动跟随
+  const programmaticScrollUntilRef = useRef(0); // 程序平滑滚动窗口：忽略中段滚动事件，防止跟随被自己打断
+  const prevMsgCountRef = useRef(0);
   const listRef = useRef<HTMLDivElement>(null);
   const taRef = useRef<HTMLTextAreaElement>(null);
 
@@ -133,14 +156,14 @@ export default function ChatConsole() {
     setPage(null);
   }
 
-  /* 恢复会话历史 */
+  /* 恢复会话历史：服务端不带 id，本地逐条补齐稳定 key */
   useEffect(() => {
     if (!sessionId) return;
     fetch(`/api/chat/history?sessionId=${sessionId}`)
       .then((r) => r.json())
       .then((d) => {
         if (d.messages?.length) {
-          setMessages(d.messages);
+          setMessages((d.messages as MsgDraft[]).map(toMsg));
           if (d.currentSlug) setCurrentSlug(d.currentSlug);
         }
       })
@@ -181,18 +204,18 @@ export default function ChatConsole() {
               setCurrentSlug(job.slug);
               setMessages((m) => [
                 ...m,
-                {
+                toMsg({
                   role: "assistant",
                   content: `✅ 分析完成，页面已发布：**${job.input}**\n\n可在右侧面板查看与调整，或打开 [show/${job.slug}](${SITE_URL}/show/${job.slug}) 预览。解说视频正在后台生成。`,
-                },
+                }),
               ]);
             } else if (job.status === "failed") {
               setMessages((m) => [
                 ...m,
-                {
+                toMsg({
                   role: "assistant",
                   content: `❌ 分析任务失败：${job.input}\n\n错误：${job.error ?? "未知"}。可在下方任务卡片点「重试」。`,
-                },
+                }),
               ]);
             }
           }
@@ -236,9 +259,55 @@ export default function ChatConsole() {
     }).catch(() => {});
   }
 
+  /* ---------------- 消息流滚动：距底 ≤120px 才自动跟随，否则显示「回到底部」浮标 ---------------- */
+
+  const scrollToBottom = useCallback((smooth: boolean) => {
+    const el = listRef.current;
+    if (!el) return;
+    // 标记程序滚动窗口：平滑滚动中段产生的滚动事件（距底仍 >120px）不应打断跟随意图
+    programmaticScrollUntilRef.current = Date.now() + 900;
+    const reduced = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    el.scrollTo({
+      top: el.scrollHeight,
+      behavior: smooth && !reduced ? "smooth" : "auto",
+    });
+  }, []);
+
+  /* 用户滚动监听：更新跟随意图与浮标可见性 */
   useEffect(() => {
-    listRef.current?.scrollTo({ top: listRef.current.scrollHeight });
-  }, [messages, busy]);
+    const el = listRef.current;
+    if (!el) return;
+    const onScroll = () => {
+      const dist = el.scrollHeight - el.scrollTop - el.clientHeight;
+      if (dist <= 4) {
+        // 已到底：恢复跟随、隐藏浮标
+        stickBottomRef.current = true;
+        setShowJump(false);
+        return;
+      }
+      // 程序平滑滚动中段：忽略，避免自动跟随被自身触发的滚动事件取消
+      if (Date.now() < programmaticScrollUntilRef.current) return;
+      stickBottomRef.current = dist <= STICK_THRESHOLD_PX;
+      setShowJump(dist > STICK_THRESHOLD_PX);
+    };
+    el.addEventListener("scroll", onScroll, { passive: true });
+    return () => el.removeEventListener("scroll", onScroll);
+  }, []);
+
+  /* 新消息 / busy 变化：仅在跟随态自动滚底；历史恢复（0 → N 条）直接落底不做长距离平滑动画 */
+  useEffect(() => {
+    const el = listRef.current;
+    if (!el) return;
+    const firstLoad = prevMsgCountRef.current === 0 && messages.length > 0;
+    prevMsgCountRef.current = messages.length;
+    if (firstLoad) {
+      stickBottomRef.current = true;
+      setShowJump(false);
+      el.scrollTo({ top: el.scrollHeight });
+      return;
+    }
+    if (stickBottomRef.current) scrollToBottom(true);
+  }, [messages, busy, scrollToBottom]);
 
   /* textarea 自动增高 */
   function autoGrow(el: HTMLTextAreaElement) {
@@ -246,13 +315,54 @@ export default function ChatConsole() {
     el.style.height = `${Math.min(el.scrollHeight, 160)}px`;
   }
 
+  /* busy 中的 Enter：有输入 → 排队（输入框清空）；已排队且输入为空 → 取消排队并还原文本。
+     排队后再输入新文本按 Enter 会替换排队内容（最新意图优先，浮条实时显示当前排队内容）。 */
+  function togglePendingQueue() {
+    const text = input.trim();
+    if (text) {
+      pendingRef.current = text;
+      setPending(text);
+      setInput("");
+      if (taRef.current) autoGrow(taRef.current);
+    } else if (pendingRef.current !== null) {
+      const queued = pendingRef.current;
+      pendingRef.current = null;
+      setPending(null);
+      setInput(queued);
+      if (taRef.current) autoGrow(taRef.current);
+    }
+  }
+
+  function cancelPendingQueue() {
+    const queued = pendingRef.current;
+    pendingRef.current = null;
+    setPending(null);
+    if (queued !== null) {
+      setInput(queued);
+      if (taRef.current) autoGrow(taRef.current);
+    }
+  }
+
   async function send(text?: string) {
     const content = (text ?? input).trim();
-    if (!content || busy || !sessionId) return;
+    if (!content || !sessionId) return;
+    if (busyRef.current) {
+      // busy：不丢弃输入，进入单槽排队；已有排队内容时不覆盖（快捷指令/命令面板不抢用户手排的消息）
+      if (pendingRef.current === null) {
+        pendingRef.current = content;
+        setPending(content);
+        if (text === undefined) {
+          setInput("");
+          if (taRef.current) autoGrow(taRef.current);
+        }
+      }
+      return;
+    }
+    busyRef.current = true;
+    setBusy(true);
     setInput("");
     if (taRef.current) autoGrow(taRef.current);
-    setMessages((m) => [...m, { role: "user", content }]);
-    setBusy(true);
+    setMessages((m) => [...m, toMsg({ role: "user", content })]);
     try {
       const res = await fetch("/api/chat", {
         method: "POST",
@@ -263,12 +373,12 @@ export default function ChatConsole() {
       if (!res.ok) throw new Error(data.error);
       setMessages((m) => [
         ...m,
-        {
+        toMsg({
           role: "assistant",
           content: data.reply,
           tools: data.toolEvents?.map((t: ToolEvent) => t.name),
           toolEvents: data.toolEvents,
-        },
+        }),
       ]);
       if (data.currentSlug) setCurrentSlug(data.currentSlug);
       refreshSessions(); // 新会话首次发言后立即出现在侧栏
@@ -280,39 +390,60 @@ export default function ChatConsole() {
     } catch (err) {
       setMessages((m) => [
         ...m,
-        {
+        toMsg({
           role: "assistant",
           content: `出错了：${err instanceof Error ? err.message : "未知错误"}`,
-        },
+        }),
       ]);
     } finally {
+      busyRef.current = false;
       setBusy(false);
+      // busy 结束：自动补发排队消息
+      const queued = pendingRef.current;
+      if (queued) {
+        pendingRef.current = null;
+        setPending(null);
+        void send(queued);
+      }
     }
   }
 
+  /**
+   * 保存面板补丁：成功 resolve、失败 reject（字段级 useFieldSave 捕获后展示红字），
+   * 不再做全局 saveError——反馈下沉到每个字段自身。
+   */
   async function patchPage(patch: Partial<PageContent>) {
-    if (!currentSlug) return;
-    try {
-      const res = await fetch(`/api/pages/${currentSlug}`, {
-        method: "PATCH",
-        headers: adminHeaders({ "Content-Type": "application/json" }),
-        body: JSON.stringify(patch),
-      });
-      const data = await res.json().catch(() => null);
-      if (!res.ok) throw new Error(data?.error || `保存失败（${res.status}）`);
-      if (data.page) setPage(data.page);
-      setSaveError("");
-    } catch (err) {
-      setSaveError(err instanceof Error ? err.message : "保存失败，请重试");
-    }
+    if (!currentSlug) throw new Error("当前没有管理中的页面");
+    const res = await fetch(`/api/pages/${currentSlug}`, {
+      method: "PATCH",
+      headers: adminHeaders({ "Content-Type": "application/json" }),
+      body: JSON.stringify(patch),
+    });
+    const data = await res.json().catch(() => null);
+    if (!res.ok) throw new Error(data?.error || `保存失败（${res.status}）`);
+    if (data.page) setPage(data.page);
   }
 
-  async function deletePage(slug: string) {
-    if (!confirm(`确定删除页面 ${slug}？`)) return;
-    await fetch(`/api/pages/${slug}`, { method: "DELETE", headers: adminHeaders() });
-    if (slug === currentSlug) {
-      setCurrentSlug(undefined);
-      setPage(null);
+  /* 删除页面：先弹自家确认对话框，确认后才真正请求 */
+  function deletePage(slug: string) {
+    setDeleteTarget(slug);
+  }
+
+  async function confirmDeletePage() {
+    const slug = deleteTarget;
+    if (!slug || deleting) return;
+    setDeleting(true);
+    try {
+      await fetch(`/api/pages/${slug}`, { method: "DELETE", headers: adminHeaders() });
+      if (slug === currentSlug) {
+        setCurrentSlug(undefined);
+        setPage(null);
+      }
+    } catch {
+      /* 网络失败静默：与原 confirm 实现一致 */
+    } finally {
+      setDeleting(false);
+      setDeleteTarget(null);
     }
   }
 
@@ -343,13 +474,19 @@ export default function ChatConsole() {
       key={currentSlug ?? "none"}
       page={page}
       currentSlug={currentSlug}
-      saveError={saveError}
       stale={pageStale}
       onReload={reloadPage}
       onPatch={patchPage}
       onDelete={deletePage}
     />
   );
+
+  /* 输入框 placeholder：busy 时提示可排队 / 已排队（再按 Enter 取消） */
+  const inputPlaceholder = busy
+    ? pending !== null
+      ? "已排队：任务结束后自动发送 · 再按 Enter 取消排队"
+      : "Agent 工作中，回车将排队发送"
+    : "给 Agent 下指令…（Enter 发送 / Shift+Enter 换行）";
 
   return (
     <div className="flex min-h-0 flex-1 flex-col">
@@ -479,47 +616,74 @@ export default function ChatConsole() {
             </button>
           </div>
 
-          {/* 消息流 */}
-          <div ref={listRef} className="flex-1 space-y-3 overflow-y-auto p-4">
-            {messages.length === 0 && (
-              <div className="mt-12 space-y-1.5 text-center font-mono text-xs text-[#7a8698]">
-                <p className="text-[#8b96a8]">Agent 工作台就绪</p>
-                <p>「分析 vercel/next.js」</p>
-                <p>「把部署章节再详细一点，加上 Docker 方式」</p>
-                <p>「把标题换成中文，标签加上 AI」</p>
-              </div>
-            )}
-            {messages.map((m, i) =>
-              m.role === "user" ? (
-                <div key={i} className="msg-in flex justify-end" style={{ "--stagger-delay": "0ms" } as React.CSSProperties}>
-                  <div className="max-w-[92%] rounded-md border border-[#2a3347] bg-[#161d28] px-3 py-2 text-[13px] text-[#e6edf3]">
-                    <Markdown text={m.content} />
+          {/* 消息流（相对定位容器：承载「回到底部」浮标） */}
+          <div className="relative min-h-0 flex-1">
+            <div ref={listRef} className="absolute inset-0 space-y-3 overflow-y-auto p-4">
+              {messages.length === 0 && (
+                <div className="mt-12 space-y-1.5 text-center font-mono text-xs text-[#7a8698]">
+                  <p className="text-[#8b96a8]">Agent 工作台就绪</p>
+                  <p>「分析 vercel/next.js」</p>
+                  <p>「把部署章节再详细一点，加上 Docker 方式」</p>
+                  <p>「把标题换成中文，标签加上 AI」</p>
+                </div>
+              )}
+              {messages.map((m) =>
+                m.role === "user" ? (
+                  <div key={m.id} className="msg-in flex justify-end" style={{ "--stagger-delay": "0ms" } as React.CSSProperties}>
+                    <div className="max-w-[92%] rounded-md border border-[#2a3347] bg-[#161d28] px-3 py-2 text-[13px] text-[#e6edf3]">
+                      <Markdown text={m.content} />
+                    </div>
                   </div>
+                ) : (
+                  <div key={m.id} className="msg-in" style={{ "--stagger-delay": "60ms" } as React.CSSProperties}>
+                    <AssistantMsg msg={m} />
+                  </div>
+                )
+              )}
+              {busy && (
+                <div className="flex items-center gap-2 px-1 py-1 text-[11px] text-[#8b96a8]">
+                  <span className="flex gap-1">
+                    <span className="hop inline-block h-1.5 w-1.5 rounded-full bg-yellow-400" />
+                    <span className="hop inline-block h-1.5 w-1.5 rounded-full bg-yellow-400" />
+                    <span className="hop inline-block h-1.5 w-1.5 rounded-full bg-yellow-400" />
+                  </span>
+                  agent working
+                  <span className="typewriter-caret" aria-hidden />
                 </div>
-              ) : (
-                <div key={i} className="msg-in" style={{ "--stagger-delay": "60ms" } as React.CSSProperties}>
-                  <AssistantMsg msg={m} />
-                </div>
-              )
+              )}
+              {jobs.map((job) => (
+                <AnalyzeJobCard key={job.id} job={job} onRetry={retryJob} onCancel={cancelJob} />
+              ))}
+            </div>
+            {showJump && (
+              <button
+                onClick={() => {
+                  stickBottomRef.current = true;
+                  setShowJump(false);
+                  scrollToBottom(true);
+                }}
+                className="palette-in absolute bottom-3 left-1/2 z-10 -translate-x-1/2 rounded-full border border-[#2a3347] bg-[#161d28]/95 px-3 py-1.5 font-mono text-[11px] text-[#8b96a8] shadow-lg backdrop-blur hover:border-emerald-500/60 hover:text-emerald-400"
+              >
+                ↓ 回到底部
+              </button>
             )}
-            {busy && (
-              <div className="flex items-center gap-2 px-1 py-1 text-[11px] text-[#8b96a8]">
-                <span className="flex gap-1">
-                  <span className="hop inline-block h-1.5 w-1.5 rounded-full bg-yellow-400" />
-                  <span className="hop inline-block h-1.5 w-1.5 rounded-full bg-yellow-400" />
-                  <span className="hop inline-block h-1.5 w-1.5 rounded-full bg-yellow-400" />
-                </span>
-                agent working
-                <span className="typewriter-caret" aria-hidden />
-              </div>
-            )}
-            {jobs.map((job) => (
-              <AnalyzeJobCard key={job.id} job={job} onRetry={retryJob} onCancel={cancelJob} />
-            ))}
           </div>
 
           {/* 输入区 */}
           <div className="border-t border-[#21283a] bg-[#10161f] p-3">
+            {/* busy 排队提示条：显示当前排队内容，可点按取消 */}
+            {pending !== null && (
+              <div className="mb-2 flex items-center gap-2 rounded border border-yellow-800/60 bg-yellow-950/30 px-2.5 py-1.5 text-[11px] text-yellow-300">
+                <span className="shrink-0" aria-hidden>⏳</span>
+                <span className="min-w-0 flex-1 truncate">已排队：{pending}</span>
+                <button
+                  onClick={cancelPendingQueue}
+                  className="shrink-0 rounded border border-yellow-800/60 px-1.5 py-0.5 text-[10px] hover:bg-yellow-900/40"
+                >
+                  取消排队
+                </button>
+              </div>
+            )}
             <div className="flex items-end gap-2">
               <textarea
                 ref={taRef}
@@ -532,14 +696,16 @@ export default function ChatConsole() {
                 onKeyDown={(e) => {
                   if (e.key === "Enter" && !e.shiftKey) {
                     e.preventDefault();
-                    send();
+                    // busy 中 Enter = 排队/取消排队；空闲 Enter = 发送
+                    if (busyRef.current) togglePendingQueue();
+                    else send();
                   }
                 }}
-                placeholder="给 Agent 下指令…（Enter 发送 / Shift+Enter 换行）"
+                placeholder={inputPlaceholder}
                 aria-label="对话输入"
                 className="input max-h-40 resize-none"
               />
-              {/* busy 时不锁输入框：允许提前起草下一条，仅禁发送 */}
+              {/* busy 时不锁输入框：允许提前起草 / 排队；发送按钮仅空闲可用 */}
               {/* Magnetic 发送按钮：±4px 内轻微磁吸，reduced-motion 下静态 */}
               <button
                 onMouseMove={(e) => {
@@ -585,6 +751,17 @@ export default function ChatConsole() {
             setMobileTab("panel");
             setCurrentSlug(slug);
           }}
+        />
+      )}
+
+      {/* 删除页面确认对话框（替代原生 confirm） */}
+      {deleteTarget && (
+        <ConfirmDialog
+          title={`删除页面 ${deleteTarget}？`}
+          body="此操作不可撤销"
+          busy={deleting}
+          onCancel={() => setDeleteTarget(null)}
+          onConfirm={confirmDeletePage}
         />
       )}
     </div>
@@ -740,10 +917,60 @@ function AssistantMsg({ msg }: { msg: Msg }) {
 
 /* ---------------- 右栏元素面板 ---------------- */
 
+/** 字段级保存状态：空闲 / 保存中 / 已保存 / 失败 */
+type FieldSaveState = "idle" | "saving" | "saved" | "error";
+
+/** 保存中转圈最短展示时长：保存过快也保证 600ms 可感知反馈 */
+const FIELD_SPIN_MIN_MS = 600;
+/** 「已保存」绿字停留时长 */
+const FIELD_SAVED_HOLD_MS = 1400;
+
+/**
+ * 字段级保存状态机：idle → saving →(≥600ms)→ saved →(1.4s)→ idle；失败落 error（红字）。
+ * onPatch 返回 Promise（patchPage 为 async），成功/失败由这里消费。
+ */
+function useFieldSave(onPatch: (patch: Partial<PageContent>) => Promise<void>) {
+  const [state, setState] = useState<FieldSaveState>("idle");
+  const [error, setError] = useState("");
+  const timersRef = useRef<number[]>([]);
+  useEffect(
+    () => () => {
+      for (const t of timersRef.current) window.clearTimeout(t);
+    },
+    []
+  );
+
+  function commit(patch: Partial<PageContent>) {
+    for (const t of timersRef.current) window.clearTimeout(t);
+    timersRef.current = [];
+    setState("saving");
+    setError("");
+    const startedAt = Date.now();
+    onPatch(patch)
+      .then(() => {
+        // 不足 600ms 的保存也补足转圈时长，避免闪烁式"假成功"
+        const remain = Math.max(0, FIELD_SPIN_MIN_MS - (Date.now() - startedAt));
+        timersRef.current.push(
+          window.setTimeout(() => {
+            setState("saved");
+            timersRef.current.push(
+              window.setTimeout(() => setState("idle"), FIELD_SAVED_HOLD_MS)
+            );
+          }, remain)
+        );
+      })
+      .catch((err) => {
+        setState("error");
+        setError(err instanceof Error ? err.message : "保存失败，请重试");
+      });
+  }
+
+  return { state, error, commit };
+}
+
 function ElementPanel({
   page,
   currentSlug,
-  saveError,
   stale,
   onReload,
   onPatch,
@@ -751,12 +978,14 @@ function ElementPanel({
 }: {
   page: PageContent | null;
   currentSlug?: string;
-  saveError: string;
   stale: boolean;
   onReload: () => void;
-  onPatch: (patch: Partial<PageContent>) => void;
+  onPatch: (patch: Partial<PageContent>) => Promise<void>;
   onDelete: (slug: string) => void;
 }) {
+  // 非字段级操作（章节删除等）的错误兜底横幅；字段级错误由各自 Field 展示
+  const [actionError, setActionError] = useState("");
+
   return (
     <div className="flex flex-col gap-3 p-3">
       <div className="flex items-center justify-between">
@@ -775,9 +1004,9 @@ function ElementPanel({
         </div>
       )}
 
-      {saveError && (
+      {actionError && (
         <p className="rounded border border-red-900 bg-red-950/60 px-2.5 py-1.5 font-mono text-[11px] text-red-300">
-          ✗ {saveError}
+          ✗ {actionError}
         </p>
       )}
 
@@ -789,60 +1018,49 @@ function ElementPanel({
       ) : (
         <>
           <Card title="基本信息">
-            <Field label="标题">
-              <input
-                defaultValue={page.title}
-                onBlur={(e) => onPatch({ title: e.target.value })}
-                className="input"
-              />
-            </Field>
-            <Field label="摘要">
-              <textarea
-                defaultValue={page.summary}
-                onBlur={(e) => onPatch({ summary: e.target.value })}
-                rows={3}
-                className="input resize-none"
-              />
-            </Field>
+            <SaveTextField
+              label="标题"
+              initial={page.title}
+              onPatch={onPatch}
+              build={(title) => ({ title })}
+            />
+            <SaveTextField
+              label="摘要"
+              initial={page.summary}
+              rows={3}
+              onPatch={onPatch}
+              build={(summary) => ({ summary })}
+            />
             <div className="grid grid-cols-2 gap-2">
-              <Field label="分类">
-                <select
-                  defaultValue={page.category}
-                  onChange={(e) => onPatch({ category: e.target.value })}
-                  className="input"
-                >
-                  {CATEGORIES.map((c) => (
-                    <option key={c} value={c}>
-                      {c}
-                    </option>
-                  ))}
-                </select>
-              </Field>
-              <Field label="图标 URL">
-                <input
-                  defaultValue={page.icon ?? ""}
-                  onBlur={(e) => onPatch({ icon: e.target.value })}
-                  className="input"
-                />
-              </Field>
+              <SaveSelectField
+                label="分类"
+                initial={page.category}
+                options={CATEGORIES}
+                onPatch={onPatch}
+                build={(category) => ({ category })}
+              />
+              <SaveTextField
+                label="图标 URL"
+                initial={page.icon ?? ""}
+                onPatch={onPatch}
+                build={(icon) => ({ icon })}
+              />
             </div>
           </Card>
 
           <Card title="标签">
-            <input
-              defaultValue={page.tags.join(", ")}
-              onBlur={(e) =>
-                onPatch({
-                  tags: e.target.value
-                    .split(/[,，]/)
-                    .map((t) => t.trim())
-                    .filter(Boolean),
-                })
-              }
-              className="input"
+            <SaveTextField
+              initial={page.tags.join(", ")}
+              onPatch={onPatch}
+              build={(raw) => ({
+                tags: raw
+                  .split(/[,，]/)
+                  .map((t) => t.trim())
+                  .filter(Boolean),
+              })}
             />
             {page.tags.length > 0 && (
-              <div className="mt-1.5 flex flex-wrap gap-1">
+              <div className="flex flex-wrap gap-1">
                 {page.tags.map((t) => (
                   <span
                     key={t}
@@ -863,9 +1081,13 @@ function ElementPanel({
                   index={i}
                   heading={s.heading}
                   body={s.body}
-                  onDelete={() =>
-                    onPatch({ sections: page.sections.filter((_, j) => j !== i) })
-                  }
+                  onDelete={() => {
+                    setActionError("");
+                    onPatch({ sections: page.sections.filter((_, j) => j !== i) }).catch(
+                      (err) =>
+                        setActionError(err instanceof Error ? err.message : "删除失败，请重试")
+                    );
+                  }}
                 />
               ))}
             </div>
@@ -904,12 +1126,111 @@ function Card({ title, children }: { title: string; children: React.ReactNode })
   );
 }
 
-function Field({ label, children }: { label: string; children: React.ReactNode }) {
+/**
+ * 字段容器：label 左侧文字，右侧挂字段级保存微反馈——
+ * saving 时小转圈（globals.css .field-spinner）、saved 时短暂绿色「已保存」、
+ * error 时输入框下方红字。min-h 保证指示行高度稳定不跳版。
+ */
+function Field({
+  label,
+  state = "idle",
+  error,
+  children,
+}: {
+  label?: string;
+  state?: FieldSaveState;
+  error?: string;
+  children: React.ReactNode;
+}) {
   return (
     <label className="block">
-      <span className="mb-1 block text-[10px] text-[#7a8698]">{label}</span>
+      <span className="mb-1 flex min-h-[14px] items-center text-[10px] leading-[14px] text-[#7a8698]">
+        {label && <span>{label}</span>}
+        <span className="ml-auto inline-flex items-center">
+          {state === "saving" && (
+            <span className="field-spinner" role="status" aria-label="保存中" />
+          )}
+          {state === "saved" && (
+            <span className="font-medium text-emerald-400" role="status">
+              已保存
+            </span>
+          )}
+        </span>
+      </span>
       {children}
+      {state === "error" && error && (
+        <span className="mt-1 block text-[10px] leading-relaxed text-red-400">
+          ✗ {error}
+        </span>
+      )}
     </label>
+  );
+}
+
+/** 带保存反馈的文本字段（input / textarea），blur 时提交 */
+function SaveTextField({
+  label,
+  initial,
+  rows,
+  onPatch,
+  build,
+}: {
+  label?: string;
+  initial: string;
+  rows?: number;
+  onPatch: (patch: Partial<PageContent>) => Promise<void>;
+  build: (raw: string) => Partial<PageContent>;
+}) {
+  const { state, error, commit } = useFieldSave(onPatch);
+  return (
+    <Field label={label} state={state} error={error}>
+      {rows ? (
+        <textarea
+          defaultValue={initial}
+          rows={rows}
+          onBlur={(e) => commit(build(e.target.value))}
+          className="input resize-none"
+        />
+      ) : (
+        <input
+          defaultValue={initial}
+          onBlur={(e) => commit(build(e.target.value))}
+          className="input"
+        />
+      )}
+    </Field>
+  );
+}
+
+/** 带保存反馈的下拉字段，change 即提交 */
+function SaveSelectField({
+  label,
+  initial,
+  options,
+  onPatch,
+  build,
+}: {
+  label?: string;
+  initial: string;
+  options: readonly string[];
+  onPatch: (patch: Partial<PageContent>) => Promise<void>;
+  build: (raw: string) => Partial<PageContent>;
+}) {
+  const { state, error, commit } = useFieldSave(onPatch);
+  return (
+    <Field label={label} state={state} error={error}>
+      <select
+        defaultValue={initial}
+        onChange={(e) => commit(build(e.target.value))}
+        className="input"
+      >
+        {options.map((c) => (
+          <option key={c} value={c}>
+            {c}
+          </option>
+        ))}
+      </select>
+    </Field>
   );
 }
 
@@ -1047,6 +1368,66 @@ function CommandPalette({
               {it.label}
             </button>
           ))}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/* ---------------- 确认对话框（深色卡片，替代原生 confirm） ---------------- */
+
+function ConfirmDialog({
+  title,
+  body,
+  busy,
+  onCancel,
+  onConfirm,
+}: {
+  title: string;
+  body: string;
+  busy: boolean;
+  onCancel: () => void;
+  onConfirm: () => void;
+}) {
+  useEffect(() => {
+    function onKey(e: KeyboardEvent) {
+      if (e.key === "Escape") onCancel();
+    }
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [onCancel]);
+
+  return (
+    <div
+      role="dialog"
+      aria-modal="true"
+      aria-label={title}
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/60"
+      onClick={onCancel}
+    >
+      <div
+        className="palette-in w-full max-w-xs rounded-lg border border-[#2a3347] bg-[#10161f] p-4 shadow-2xl"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <h3 className="text-[13px] font-medium text-foreground">{title}</h3>
+        <p className="mt-1.5 text-[12px] leading-relaxed text-[#8b96a8]">{body}</p>
+        <div className="mt-4 flex justify-end gap-2">
+          {/* autoFocus 落在「取消」：Enter 误触不会直接触发破坏性操作 */}
+          <button
+            autoFocus
+            onClick={onCancel}
+            disabled={busy}
+            className="rounded border border-[#2a3347] px-3 py-1.5 text-[12px] text-[#8b96a8] hover:text-foreground disabled:opacity-50"
+          >
+            取消
+          </button>
+          <button
+            onClick={onConfirm}
+            disabled={busy}
+            className="rounded bg-red-600 px-3 py-1.5 text-[12px] font-medium text-white hover:bg-red-500 disabled:opacity-50"
+          >
+            {busy ? "删除中…" : "删除"}
+          </button>
         </div>
       </div>
     </div>

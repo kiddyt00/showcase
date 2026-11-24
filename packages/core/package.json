@@ -13,6 +13,7 @@
     "./analyzers": "./src/analyzers/index.ts",
     "./diagrams": "./src/diagrams.ts",
     "./redact": "./src/redact.ts",
+    "./provenance": "./src/provenance.ts",
     "./auth": "./src/auth.ts",
     "./safe-fetch": "./src/safe-fetch.ts",
     "./mode": "./src/mode.ts",

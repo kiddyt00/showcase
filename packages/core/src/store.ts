@@ -212,6 +212,25 @@ export function getPage(slug: string): PageContent | null {
   return row ? rowToPage(row) : null;
 }
 
+/**
+ * 单键更新页面 metadata（异步任务回写用，如视频渲染耗时写入 provenance）。
+ * 只改一个键，避免整页读出/写回造成并发覆盖；页面不存在时静默返回。
+ */
+export function updatePageMetadata(slug: string, key: string, value: string | number): void {
+  const row = db.prepare(`SELECT metadata FROM pages WHERE slug = ?`).get(slug) as
+    | { metadata: string }
+    | undefined;
+  if (!row) return;
+  let meta: Record<string, string | number | undefined> = {};
+  try {
+    meta = JSON.parse(row.metadata) as Record<string, string | number | undefined>;
+  } catch {
+    /* 损坏数据按空对象重建 */
+  }
+  meta[key] = value;
+  db.prepare(`UPDATE pages SET metadata = ? WHERE slug = ?`).run(JSON.stringify(meta), slug);
+}
+
 export function deletePage(slug: string): boolean {
   const r = db.prepare(`DELETE FROM pages WHERE slug = ?`).run(slug);
   return r.changes > 0;

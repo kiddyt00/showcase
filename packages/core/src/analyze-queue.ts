@@ -13,6 +13,7 @@ import {
   type AnalyzeJob,
 } from "./store";
 import { startRender } from "./video/queue";
+import { decodeProvenance, encodeProvenance, PROVENANCE_METADATA_KEY } from "./provenance";
 
 /** 同一时刻最多执行的分析任务数 */
 const MAX_CONCURRENT = 2;
@@ -116,6 +117,7 @@ async function executeJob(id: string): Promise<void> {
   const ctrl = new AbortController();
   controllers.set(id, ctrl);
   const startedAt = new Date().toISOString();
+  const startedMs = Date.now();
   updateAnalyzeJob(id, { status: "running", startedAt, stage: "抓取素材" });
   try {
     const { page } = await runAnalysis(
@@ -134,6 +136,15 @@ async function executeJob(id: string): Promise<void> {
     if (cur?.status !== "running") {
       controllers.delete(id);
       return;
+    }
+    // 诞生记：savePage 前补排队耗时（任务创建→开始执行）/ 全程耗时（任务创建→此刻）/ 任务 ID / 实际开始时刻
+    const prov = decodeProvenance(page.metadata[PROVENANCE_METADATA_KEY]);
+    if (prov) {
+      prov.jobId = id;
+      prov.startedAt = startedAt;
+      prov.queueMs = startedMs - Date.parse(job.createdAt);
+      prov.totalMs = Date.now() - Date.parse(job.createdAt);
+      page.metadata[PROVENANCE_METADATA_KEY] = encodeProvenance(prov);
     }
     savePage(page);
 

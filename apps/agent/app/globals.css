@@ -168,6 +168,20 @@ body {
   will-change: transform;
 }
 
+/* 字段级保存反馈：label 右侧小转圈（ElementPanel 保存中状态） */
+@keyframes field-spin {
+  to { transform: rotate(360deg); }
+}
+.field-spinner {
+  display: inline-block;
+  width: 10px;
+  height: 10px;
+  border: 1.5px solid #2a3347;
+  border-top-color: var(--accent);
+  border-radius: 50%;
+  animation: field-spin 0.8s linear infinite;
+}
+
 /* 消息气泡区分：assistant 淡 accent 左线 */
 .assistant-rail {
   box-shadow: inset 2px 0 0 0 rgb(52 211 153 / 0.35);
@@ -186,6 +200,9 @@ body {
   .magnetic {
     transform: none !important;
     transition: none;
+  }
+  .field-spinner {
+    animation-duration: 2.4s;
   }
 }
 
