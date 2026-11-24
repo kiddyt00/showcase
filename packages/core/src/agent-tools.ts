@@ -315,6 +315,14 @@ export async function executeTool(
       let n = 2;
       while (existing.some((d) => d.id === id)) id = `${type}-${n++}`;
       const { diagram, error } = await renderDiagram(page.slug, { id, title, type, spec });
+      // 渲染失败不落库：避免页面出现"图表生成失败"占位
+      if (!diagram.svgUrl && !diagram.htmlUrl) {
+        return {
+          result: `图表「${title}」渲染失败：${error ?? "未知原因"}。可根据错误修正 spec 后重试。`,
+          currentSlug: page.slug,
+          page,
+        };
+      }
       page.diagrams = [...existing, diagram];
       savePage(page);
       return {

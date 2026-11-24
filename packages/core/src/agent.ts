@@ -9,7 +9,19 @@ import { uniqueSlugFrom } from "./store";
 import { redactPageContent } from "./redact";
 import { renderPageDiagrams } from "./diagrams";
 
-const SYSTEM_PROMPT = `你是一个内容分析引擎。根据给定的素材，产出一份结构化的中文分析报告，用于生成介绍网页。
+const SYSTEM_PROMPT = `你是一个面向科普读者和技术爱好者的内容分析引擎。产出结构化中文分析报告，用于生成高质量的知识分享网页。
+
+## 内容质量硬规则（违反任何一条即视为不合格产出）
+1. 章节标题必须内容化：标题要能独立传达该章结论，如"一条命令跑起 70B 模型""为什么比 Docker Compose 快 3 倍"。严禁使用"内容概览""核心亮点与主要内容分析""适用场景与总结"这类占位模板词。
+2. 每个关键论断必须带数字：stars/性能倍数/价格/版本号/用户量。科普文没有数字就没有说服力。
+3. "上手/部署"类章节必须包含从素材中提取的真实命令块（code 字段），每条命令配一句预期结果说明；该章节正文 ≥300 字，是全文最详实的部分。
+4. 必须包含一个 Markdown 对比表格：与 2-3 个同类项目/方案对比（维度：定位/上手成本/性能/生态任选）。
+5. 正文用类比解释抽象概念（"Ollama 之于大模型，就像 Docker 之于应用"），每个抽象概念至少一个类比。
+
+## 结构公式（按 category 选择章节骨架，标题需内容化改写）
+- opensource：一句话定位与类比 → 为什么值得现在关注（数字佐证）→ 上手演示（真实命令+预期输出）→ 原理/架构拆解（配图表）→ 同类对比与边界（表格）→ 行动建议
+- article：文章核心论点 → 论据拆解（数字/案例）→ 与常识的反差 → 对读者的实际影响 → 行动建议
+- tutorial：最终效果预告 → 前置条件 → 分步演示（每步含验证方式）→ 常见坑 → 延伸方向
 
 你必须只输出一个 JSON 对象，schema 如下：
 {
@@ -108,8 +120,38 @@ export async function runAnalysis(req: AnalyzeRequest): Promise<AnalyzeResult> {
     generator: `${analyzer.id}@1`,
   };
 
-  // 页面保存前渲染图表（失败不阻塞）
-  await renderPageDiagrams(page);
+  // 页面保存前渲染图表；失败回喂 LLM 修正 spec，最多重试 1 次
+  let renderResult = await renderPageDiagrams(page);
+  if (renderResult.failed.length) {
+    for (const f of renderResult.failed) {
+      try {
+        const fixRaw = (
+          await chat(
+            [
+              {
+                role: "system",
+                content:
+                  "你是 SeeCode 图表 spec 修正器。根据渲染错误修正 JSON spec，只输出修正后的完整 JSON 对象，不要解释。",
+              },
+              {
+                role: "user",
+                content: `渲染错误：${f.error}\n\n原始 spec：${JSON.stringify(f.diagram.spec)}\n\n请修正（常见错误：edges 引用不存在的节点 id、edges[3] kind 非法（只允许 default/primary/link/async/return/muted 等，禁止 dashed/solid 这类 CSS 值）、row/col 越界、缺少必填字段、type 拼写错误）。`,
+              },
+            ],
+            { jsonMode: true }
+          )
+        ).content;
+        f.diagram.spec = extractJson(fixRaw);
+      } catch (fixErr) {
+        console.warn("[diagram] spec 修正失败:", fixErr);
+      }
+    }
+    // 修正后整体重渲染一轮
+    renderResult = await renderPageDiagrams(page);
+    for (const f of renderResult.failed) {
+      console.warn(`[diagram] ${f.diagram.id} 重试仍失败: ${f.error}`);
+    }
+  }
 
   // 发布前敏感信息脱敏：直接使用返回的新对象
   const { page: redacted } = redactPageContent(page);
