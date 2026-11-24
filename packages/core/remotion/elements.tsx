@@ -757,7 +757,8 @@ export const StatGrid: React.FC<{
         // 含数字的 value 做 spring 滚动；纯文本（如"全球第一"）静态展示
         const parsed = /\d/.test(s.value) ? parseStatValue(s.value) : null;
         const p = Math.min(1, Math.max(0, (frame - (at + COUNT_START)) / COUNT_FRAMES));
-        const eased = springEase(p, 1.1);
+        // 负值（如 -3.2%）不用过冲缓动——亏损先放大再回弹是观感错误；正值保留弹簧冲击感
+        const eased = parsed && parsed.num < 0 ? springEase(p, 0) : springEase(p, 1.1);
         const current = parsed ? parsed.num * eased : 0;
         const numText = parsed
           ? current.toLocaleString("en-US", {

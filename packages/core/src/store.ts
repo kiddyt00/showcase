@@ -309,7 +309,41 @@ export async function uniqueSlugFrom(raw: string | undefined | null, title: stri
 
 /* ---------- 开场模式台账（r3-open：代码定规则 + LLM 填空） ---------- */
 
-/** 记录一次开场模式分配（pickOpeningMode 写入，按 slug 观测轮换是否均匀） */
+/**
+ * 原子分配开场模式并记入台账（R5-BUG3 修复）：
+ * SELECT COUNT + INSERT 包进同步事务，消除两语句间隙——并发分析（MAX_CONCURRENT=2）
+ * 不再撞同一模式、台账计数不再虚高。better-sqlite3 同步事务在单进程内互斥。
+ */
+export function pickAndRecordOpeningMode(
+  pool: string[],
+  slug: string
+): string {
+  const tx = db.transaction((): string => {
+    const rows = db
+      .prepare(`SELECT mode, COUNT(*) AS n FROM opening_ledger GROUP BY mode`)
+      .all() as { mode: string; n: number }[];
+    const counts: Record<string, number> = {};
+    for (const r of rows) counts[r.mode] = r.n;
+    let mode = pool[0]!;
+    let min = Infinity;
+    for (const m of pool) {
+      const c = counts[m] ?? 0;
+      if (c < min) {
+        min = c;
+        mode = m;
+      }
+    }
+    db.prepare(`INSERT INTO opening_ledger (mode, slug, chosen_at) VALUES (?, ?, ?)`).run(
+      mode,
+      slug,
+      new Date().toISOString()
+    );
+    return mode;
+  });
+  return tx();
+}
+
+/** 记录一次开场模式分配（外部观测用；pickAndRecordOpeningMode 已内置写入） */
 export function recordOpeningMode(mode: string, slug: string): void {
   db.prepare(`INSERT INTO opening_ledger (mode, slug, chosen_at) VALUES (?, ?, ?)`).run(
     mode,

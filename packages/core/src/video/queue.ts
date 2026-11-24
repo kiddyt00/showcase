@@ -8,7 +8,8 @@ import { decodeProvenance, encodeProvenance, PROVENANCE_METADATA_KEY } from "../
 import type { Orientation, VideoMode } from "./types";
 
 export const MAX_CONCURRENT_RENDERS = 1;
-const RENDER_TIMEOUT_MS = 15 * 60 * 1000;
+/** 渲染超时阈值：必须 ≥ 渲染器自身超时（HyperFrames 20 分钟），否则活任务会被 sweep 误杀 */
+const RENDER_TIMEOUT_MS = 25 * 60 * 1000;
 
 let activeRenders = 0;
 
@@ -27,25 +28,24 @@ export function releaseRenderSlot(): void {
   activeRenders = Math.max(0, activeRenders - 1);
 }
 
-/** 渲染超时的僵死任务自动置 failed，可重试 */
+/** 渲染超时的僵死任务自动置 failed，可重试。
+ *  修复 R5-BUG1：查询与回写都带 mode——不同 mode 共用一行 (slug,orientation)，
+ *  不带 mode 的清理会把另一引擎仍在跑的任务误标失败并互相覆盖状态 */
 export function sweepStaleRenderingJobs(): void {
   const cutoff = new Date(Date.now() - RENDER_TIMEOUT_MS).toISOString();
   const stale = db
     .prepare(
-      `SELECT slug, orientation, created_at FROM video_jobs WHERE status = 'rendering' AND created_at < ?`
+      `SELECT slug, orientation, mode, created_at FROM video_jobs WHERE status = 'rendering' AND created_at < ?`
     )
-    .all(cutoff) as { slug: string; orientation: string; created_at: string }[];
+    .all(cutoff) as { slug: string; orientation: string; mode: string | null; created_at: string }[];
   for (const row of stale) {
-    const existing = db
-      .prepare(`SELECT status FROM video_jobs WHERE slug = ? AND orientation = ?`)
-      .get(row.slug, row.orientation);
-    if (!existing) continue;
     upsertVideoJob({
       slug: row.slug,
       orientation: row.orientation as Orientation,
       status: "failed",
       error: "渲染超时，可重试",
       createdAt: row.created_at,
+      mode: (row.mode as import("./types").VideoMode) ?? "standard",
     });
   }
 }

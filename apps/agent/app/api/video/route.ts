@@ -111,7 +111,19 @@ export async function GET(request: NextRequest) {
   return Response.json({
     ok: true,
     job,
-    url: job?.status === "done" ? `/videos/${slug}-${orientation}.mp4` : null,
+    // 产物名按 mode 分支（R5：原恒拼标准名，quick/slides/hf 模式下指向不存在的文件）
+    url:
+      job?.status === "done"
+        ? `/videos/${slug}-${orientation}${
+            job.mode === "quick"
+              ? "-quick"
+              : job.mode === "hyperframes"
+                ? "-hf"
+                : job.mode === "slides"
+                  ? "-slides"
+                  : ""
+          }.mp4`
+        : null,
     scenes: job?.scenes ?? [],
     dimensions: DIMENSIONS[orientation],
   });

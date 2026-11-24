@@ -3,7 +3,7 @@
  * 视频开场不再由 LLM 每次祈祷式自选，而是代码定规则（按分类限定的模式池 + 全局轮换台账），
  * LLM 只负责在给定模式的硬约束内"填空"。
  */
-import { recordOpeningMode, getOpeningCounts } from "../store";
+import { pickAndRecordOpeningMode } from "../store";
 
 /** 三种开场语法：悬念解码 / 数字冲击 / 过程切入 */
 export type OpeningMode = "suspense" | "number" | "process";
@@ -29,24 +29,12 @@ function poolFor(category: string): OpeningMode[] {
 }
 
 /**
- * 选出本条视频的开场模式并记入台账：
- * 池内取 getOpeningCounts 全局最少者（跨分类均匀消化），平局取字典序（确定性）。
- * 未知 mode（如台账被手改出脏值）不参与最少值比较。
+ * 选出本条视频的开场模式并记入台账（R5-BUG3 修复：SELECT+INSERT 已事务化）。
+ * 池内取全局最少者（跨分类均匀消化），平局取字典序（确定性）。
  */
 export function pickOpeningMode(category: string, slug: string): OpeningMode {
   const pool = poolFor(category);
-  const counts = getOpeningCounts();
-  let mode = pool[0]!;
-  let min = Infinity;
-  for (const m of pool) {
-    const c = counts[m] ?? 0;
-    if (c < min) {
-      min = c;
-      mode = m;
-    }
-  }
-  recordOpeningMode(mode, slug);
-  return mode;
+  return pickAndRecordOpeningMode(pool, slug) as OpeningMode;
 }
 
 /** 开场硬约束：注入 SCRIPT_PROMPT 的 user 消息（铁律 6 由它取代，LLM 只做填空） */

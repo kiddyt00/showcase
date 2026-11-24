@@ -775,7 +775,9 @@ export function generateDigestScript(page: PageContent): ScriptScene[] {
   const narr3 = `全文约 ${minutes} 分钟，悬念留给完整版。`;
   let budget = QUICK_TOTAL_NARRATION;
   const cut = (n: string) => {
-    const kept = n.slice(0, Math.max(8, QUICK_SCENE_NARRATION, Math.min(n.length, budget)));
+    // R5-BUG2 修复：截断下限不超过剩余预算（原 Math.max 里 QUICK_SCENE_NARRATION
+    // 会在前序场景超支后仍强留 60 字，最坏突破 120 字总量 → 快览超 30 秒）
+    const kept = n.slice(0, Math.max(8, Math.min(n.length, Math.max(budget, 8))));
     budget -= Math.min(budget, kept.replace(/\s/g, "").length);
     return kept;
   };

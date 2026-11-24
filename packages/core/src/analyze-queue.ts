@@ -199,7 +199,7 @@ export function sweepStaleAnalyzeJobs(): void {
       updateAnalyzeJob(j.id, {
         status: "failed",
         stage: "失败",
-        error: "任务超时（超过 20 分钟未完成，可能因服务重启或渲染挂起）",
+        error: "任务超时（超过 35 分钟未完成，可能因服务重启或渲染挂起）",
         finishedAt: new Date().toISOString(),
       });
     }

@@ -48,7 +48,7 @@ const QUICK_PROMPTS = [
   { label: "加架构图", prompt: "为当前页面添加一张架构图" },
   { label: "优化标题", prompt: "把当前页面标题改得更吸引人，摘要也更精炼" },
   { label: "渲染视频", prompt: "为当前页面渲染解说视频" },
-  { label: "HF 渲染", prompt: "为当前页面用 hyperframes 引擎渲染 30 秒快览版视频" },
+  { label: "HF 渲染", prompt: "为当前页面渲染 30 秒快览版解说视频（quick 模式，HyperFrames 引擎）" },
 ];
 
 const SESSIONS_KEY = "showcase-sessions";
@@ -80,7 +80,7 @@ export default function ChatConsole() {
   const busyRef = useRef(false); // 与 busy 同步，供键盘事件读最新值（避免双 Enter 竞态）
   const pendingRef = useRef<string | null>(null); // 与 pending 同步，供 send() finally 读取
   const stickBottomRef = useRef(true); // 距底 ≤120px 时保持自动跟随
-  const programmaticScrollUntilRef = useRef(0); // 程序平滑滚动窗口：忽略中段滚动事件，防止跟随被自己打断
+  const programmaticScrollUntilRef = useRef(0); // 程序平滑滚动窗口截止时刻：中段滚动事件忽略，防止跟随被自己打断
   const prevMsgCountRef = useRef(0);
   const listRef = useRef<HTMLDivElement>(null);
   const taRef = useRef<HTMLTextAreaElement>(null);
@@ -264,8 +264,11 @@ export default function ChatConsole() {
   const scrollToBottom = useCallback((smooth: boolean) => {
     const el = listRef.current;
     if (!el) return;
-    // 标记程序滚动窗口：平滑滚动中段产生的滚动事件（距底仍 >120px）不应打断跟随意图
-    programmaticScrollUntilRef.current = Date.now() + 900;
+    // 标记程序滚动窗口：平滑滚动中段产生的滚动事件（距底仍 >120px）不应打断跟随意图。
+    // 窗口时长随内容高度伸缩：900ms 只覆盖 ~6000px 内容；长消息流（如整页 markdown 回复）
+    // 平滑滚动可长达数秒，固定 900ms 会在后半程被自己的滚动事件打断、浮标闪烁出现。
+    programmaticScrollUntilRef.current =
+      Date.now() + Math.min(1800, Math.max(900, el.scrollHeight / 8));
     const reduced = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
     el.scrollTo({
       top: el.scrollHeight,
@@ -384,7 +387,7 @@ export default function ChatConsole() {
       refreshSessions(); // 新会话首次发言后立即出现在侧栏
       // Agent 工具写入了页面 → 面板数据过期提示（避免面板 blur 保存静默覆盖 Agent 的修改）
       const pageMutating = (data.toolEvents as ToolEvent[] | undefined)?.find((t) =>
-        /^(analyze_source|update_page|update_section|add_section|delete_section|set_metadata|add_diagram|open_page)$/.test(t.name)
+        /^(analyze_source|update_page|update_section|add_section|delete_section|set_metadata|add_diagram|open_page|render_video)$/.test(t.name)
       );
       if (pageMutating && data.currentSlug === currentSlug) markPageStale();
     } catch (err) {
@@ -446,6 +449,9 @@ export default function ChatConsole() {
       setDeleteTarget(null);
     }
   }
+  // 稳定引用：父组件活跃任务期间每秒重渲染，内联箭头会让 ConfirmDialog 的
+  // keydown effect 每秒卸载重挂（焦点归还逻辑也随之每秒重跑），必须 useCallback
+  const closeDeleteDialog = useCallback(() => setDeleteTarget(null), []);
 
   /* 命令面板快捷键 */
   useEffect(() => {
@@ -760,7 +766,7 @@ export default function ChatConsole() {
           title={`删除页面 ${deleteTarget}？`}
           body="此操作不可撤销"
           busy={deleting}
-          onCancel={() => setDeleteTarget(null)}
+          onCancel={closeDeleteDialog}
           onConfirm={confirmDeletePage}
         />
       )}
@@ -933,9 +939,14 @@ function useFieldSave(onPatch: (patch: Partial<PageContent>) => Promise<void>) {
   const [state, setState] = useState<FieldSaveState>("idle");
   const [error, setError] = useState("");
   const timersRef = useRef<number[]>([]);
+  const genRef = useRef(0); // 代际计数：只允许最新一次 commit 写终态
+  const onPatchRef = useRef(onPatch);
+  onPatchRef.current = onPatch;
   useEffect(
     () => () => {
+      // 卸载清理：saved/error 的定时器必须清，否则闭包里的 setState 在组件卸载后仍会触发
       for (const t of timersRef.current) window.clearTimeout(t);
+      genRef.current += 1; // 让在途 Promise 的迟到回调全部失效
     },
     []
   );
@@ -943,23 +954,30 @@ function useFieldSave(onPatch: (patch: Partial<PageContent>) => Promise<void>) {
   function commit(patch: Partial<PageContent>) {
     for (const t of timersRef.current) window.clearTimeout(t);
     timersRef.current = [];
+    const gen = ++genRef.current;
     setState("saving");
     setError("");
     const startedAt = Date.now();
-    onPatch(patch)
+    onPatchRef.current(patch)
       .then(() => {
+        if (gen !== genRef.current) return; // 已被更新的 commit / 卸载取代，丢弃过期回调
         // 不足 600ms 的保存也补足转圈时长，避免闪烁式"假成功"
         const remain = Math.max(0, FIELD_SPIN_MIN_MS - (Date.now() - startedAt));
         timersRef.current.push(
           window.setTimeout(() => {
+            if (gen !== genRef.current) return;
             setState("saved");
             timersRef.current.push(
-              window.setTimeout(() => setState("idle"), FIELD_SAVED_HOLD_MS)
+              window.setTimeout(() => {
+                if (gen !== genRef.current) return;
+                setState("idle");
+              }, FIELD_SAVED_HOLD_MS)
             );
           }, remain)
         );
       })
       .catch((err) => {
+        if (gen !== genRef.current) return;
         setState("error");
         setError(err instanceof Error ? err.message : "保存失败，请重试");
       });
@@ -1389,12 +1407,48 @@ function ConfirmDialog({
   onCancel: () => void;
   onConfirm: () => void;
 }) {
+  const panelRef = useRef<HTMLDivElement>(null);
+
   useEffect(() => {
+    // 打开时焦点已由「取消」按钮的 autoFocus 接管；这里记录触发元素，关闭后归还
+    const opener = document.activeElement as HTMLElement | null;
+    const dialog = panelRef.current;
+    const FOCUSABLE =
+      'button:not([disabled]), [href], input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])';
+    function focusables(): HTMLElement[] {
+      if (!dialog) return [];
+      return Array.from(dialog.querySelectorAll<HTMLElement>(FOCUSABLE));
+    }
     function onKey(e: KeyboardEvent) {
-      if (e.key === "Escape") onCancel();
+      if (e.key === "Escape") {
+        onCancel();
+        return;
+      }
+      // 焦点圈定：Tab / Shift+Tab 循环限制在对话框内，不逸出到背后页面
+      if (e.key !== "Tab" || !dialog) return;
+      const list = focusables();
+      if (list.length === 0) return;
+      const first = list[0];
+      const last = list[list.length - 1];
+      const active = document.activeElement;
+      if (e.shiftKey) {
+        if (active === first || !dialog.contains(active)) {
+          e.preventDefault();
+          last.focus();
+        }
+      } else if (active === last || !dialog.contains(active)) {
+        e.preventDefault();
+        first.focus();
+      }
     }
     window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
+    return () => {
+      window.removeEventListener("keydown", onKey);
+      // 焦点归还到触发「删除页面」的按钮；触发元素已不在文档（如面板已切换）则不强行搬移
+      if (opener && typeof opener.focus === "function" && document.contains(opener)) {
+        opener.focus();
+      }
+    };
   }, [onCancel]);
 
   return (
@@ -1406,6 +1460,7 @@ function ConfirmDialog({
       onClick={onCancel}
     >
       <div
+        ref={panelRef}
         className="palette-in w-full max-w-xs rounded-lg border border-[#2a3347] bg-[#10161f] p-4 shadow-2xl"
         onClick={(e) => e.stopPropagation()}
       >

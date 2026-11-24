@@ -26,6 +26,8 @@ export interface WeeklyIssue {
   topTags: string[];
   /** 升温词：本期出现 ≥2 次且此前（有内容的周）周均 <1 的标签；无则 null */
   risingTag: string | null;
+  /** 升温词在本期的出现次数（铅字块上标注「本期 N 处」用） */
+  risingTagCount: number;
   /** 本期正文字数最多的篇目（getPage 取 sections 统计）；空则 null */
   longest: PageSummary | null;
   /** 下期印行日：refDate 之后的下一个周五（refDate 为周五则下周五），ISO "YYYY-MM-DD" */
@@ -89,16 +91,31 @@ function bodyChars(sections: Array<{ body?: string; bullets?: string[] }>): numb
 }
 
 /**
- * 往期周键：快照内出现过的 ISO 周（倒序，最新在前），排除 excludeKey（当前期）。
- * 供 /weekly 的往期导航使用；与 buildWeeklyIssue 同一快照口径（listPages(50)）。
+ * 往期周键（过刊目录数据）：快照内出现过的 ISO 周（倒序，最新在前），排除 excludeKey。
+ * 与 buildWeeklyIssue 同一快照口径（listPages(50)）；count 供过刊页「第 N 期 · 共 M 篇」小注用。
  */
-export function listArchiveWeeks(excludeKey?: string, limit = 12): string[] {
-  const weeks = new Set<string>();
+export interface ArchiveWeek {
+  /** ISO 周键，如 "2026-W47" */
+  week: string;
+  /** 该周实际收录篇数 */
+  count: number;
+}
+
+/** refDate 所属 ISO 周键（本期语义） */
+export function weekKeyOf(refDate: Date): string {
+  return isoWeekKey(refDate);
+}
+
+export function listArchiveWeeks(excludeKey?: string, limit = 12): ArchiveWeek[] {
+  const counts = new Map<string, number>();
   for (const p of listPages(50)) {
     const w = isoWeekKey(new Date(p.createdAt));
-    if (w !== excludeKey) weeks.add(w);
+    if (w !== excludeKey) counts.set(w, (counts.get(w) ?? 0) + 1);
   }
-  return [...weeks].sort((a, b) => (a < b ? 1 : -1)).slice(0, limit);
+  return [...counts.entries()]
+    .sort((a, b) => (a[0] < b[0] ? 1 : -1))
+    .slice(0, limit)
+    .map(([week, count]) => ({ week, count }));
 }
 
 /** 标签频次降序（同频字典序），top3 与升温词共用同一顺序 */
@@ -156,6 +173,7 @@ export function buildWeeklyIssue(refDate: Date): WeeklyIssue {
     for (const t of p.tags) tags.set(t, (tags.get(t) ?? 0) + 1);
   }
   let risingTag: string | null = null;
+  let risingTagCount = 0;
   if (weeksBefore.size > 0) {
     for (const [tag, n] of tagsByCount(tagCount)) {
       if (n < 2) break; // 已按频次降序，后续必 <2
@@ -163,6 +181,7 @@ export function buildWeeklyIssue(refDate: Date): WeeklyIssue {
       for (const tags of weeksBefore.values()) before += tags.get(tag) ?? 0;
       if (before / weeksBefore.size < 1) {
         risingTag = tag;
+        risingTagCount = n;
         break;
       }
     }
@@ -204,6 +223,7 @@ export function buildWeeklyIssue(refDate: Date): WeeklyIssue {
     delta,
     topTags,
     risingTag,
+    risingTagCount,
     longest,
     nextIssueDate,
   };
