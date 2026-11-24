@@ -215,7 +215,7 @@ export default function PageView({ page }: { page: PageContent }) {
               {section.bullets?.length ? (
                 <ul className="mt-2 space-y-1">
                   {section.bullets.map((b, j) => (
-                    <li key={j} className="ml-5 list-disc text-sm text-[var(--fg)]">
+                    <li key={j} className="ml-5 list-disc text-[15px] leading-[1.85] text-[var(--fg)]">
                       <Markdown text={b} />
                     </li>
                   ))}

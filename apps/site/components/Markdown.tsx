@@ -38,7 +38,7 @@ function renderInline(text: string): React.ReactNode[] {
         className={`my-1 space-y-0.5 ${ordered ? "ml-5 list-decimal" : "ml-5 list-disc"}`}
       >
         {listItems.map((li) => (
-          <li key={li.key} className="py-0.5 text-sm leading-relaxed text-[var(--fg)]">
+          <li key={li.key} className="my-1 text-[15px] lg:text-base leading-[1.9] text-[var(--fg)]">
             {li.content}
           </li>
         ))}
@@ -52,8 +52,7 @@ function renderInline(text: string): React.ReactNode[] {
     const line = lines[i];
     if (!line.trim()) {
       flushList();
-      out.push(<div key={key} className="h-2" />);
-      continue;
+      continue; // 段落间距交给块级 margin（#md-block），不再用固定 h-2 占位
     }
     // 列表行：先缓冲，遇到非列表行（或序号样式切换）时输出
     const ul = line.match(/^\s*[-*]\s+(.*)/);
@@ -152,7 +151,7 @@ function renderInline(text: string): React.ReactNode[] {
       continue;
     }
     out.push(
-      <p key={key} className="py-0.5 text-sm leading-relaxed text-[var(--fg)]">
+      <p key={key} className="my-3 text-[15px] lg:text-base leading-[1.9] text-[var(--fg)]">
         {formatSpans(line)}
       </p>
     );

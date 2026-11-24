@@ -236,8 +236,69 @@ const CounterRoll: React.FC<{
   );
 };
 
-const Slideshow: React.FC<SlideshowProps> = ({ title, icon, tags, scenes, slug, bgmFile }) => {
-  const frame = useCurrentFrame();
+/** 场景转场样式：按索引循环 blur-dissolve / mask-wipe / zoom-through；storyboard 显式声明优先 */
+const TRANSITION_FX = ["blur", "wipe", "zoom"] as const;
+
+function transitionStyleFor(
+  idx: number,
+  local: number,
+  dur: number,
+  fps: number,
+  declared?: { in?: string; out?: string }
+): React.CSSProperties {
+  const OVERLAP = Math.round(fps * 0.5); // 0.5s 转场窗口
+  const fx = TRANSITION_FX[idx % TRANSITION_FX.length];
+  const tIn = interpolate(local, [0, OVERLAP], [0, 1], { extrapolateRight: "clamp" });
+  const tOut = interpolate(local, [dur - OVERLAP, dur], [0, 1], { extrapolateLeft: "clamp" });
+  const useIn = declared?.in !== "none";
+  const useOut = declared?.out !== "none" && idx < 99; // 末场景不做出场
+
+  // 进入：blur-dissolve / wipe 位移 / zoom 收拢
+  let enterStyle: React.CSSProperties = {};
+  if (useIn && local < OVERLAP) {
+    if (fx === "blur") {
+      enterStyle = {
+        opacity: tIn,
+        filter: `blur(${(1 - tIn) * 14}px)`,
+        transform: `scale(${0.975 + 0.025 * tIn})`,
+      };
+    } else if (fx === "wipe") {
+      enterStyle = {
+        clipPath: `inset(0 0 0 ${(1 - tIn) * 100}%)`,
+      };
+    } else {
+      enterStyle = {
+        opacity: Math.min(1, tIn * 1.4),
+        transform: `scale(${1.16 - 0.16 * tIn})`,
+        filter: `blur(${(1 - tIn) * 10}px)`,
+      };
+    }
+  }
+  // 退出：对称反向
+  let exitStyle: React.CSSProperties = {};
+  if (useOut && local > dur - OVERLAP) {
+    if (fx === "blur") {
+      exitStyle = {
+        opacity: 1 - tOut,
+        filter: `blur(${tOut * 14}px)`,
+        transform: `scale(${1 + 0.03 * tOut})`,
+      };
+    } else if (fx === "wipe") {
+      exitStyle = {
+        clipPath: `inset(0 ${(tOut * 100).toFixed(1)}% 0 0)`,
+      };
+    } else {
+      exitStyle = {
+        opacity: 1 - tOut,
+        transform: `scale(${1 + 0.14 * tOut})`,
+        filter: `blur(${tOut * 10}px)`,
+      };
+    }
+  }
+  return { ...enterStyle, ...exitStyle };
+}
+
+const Slideshow: React.FC<SlideshowProps> = ({ title, icon, tags, scenes, slug, bgmFile }) => {  const frame = useCurrentFrame();
   const { fps } = useVideoConfig();
   // 图标可能是外部 URL，也可能是 public 内的本地路径
   const iconSrc =
@@ -373,9 +434,13 @@ const Slideshow: React.FC<SlideshowProps> = ({ title, icon, tags, scenes, slug, 
         </>
       ) : null}
 
-      {/* v5 分镜：LLM 设计的原语组合接管场景画面（字幕/进度条/音频仍保留） */}
+      {/* v5 分镜：LLM 设计的原语组合接管场景画面；外包转场层（进入+退出，消除硬切） */}
       {hasStoryboard ? (
-        <StoryboardView scene={scene} frame={local} fps={fps} durationFrames={dur} />
+        <AbsoluteFill
+          style={transitionStyleFor(idx, local, dur, fps, scene.storyboard?.transitions)}
+        >
+          <StoryboardView scene={scene} frame={local} fps={fps} durationFrames={dur} />
+        </AbsoluteFill>
       ) : null}
 
       {/* 幻灯片模式：截图全屏铺满 + 底部渐变压边 + Ken Burns，替代默认布局（narration/字幕/进度条仍保留） */}

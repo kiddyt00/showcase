@@ -9,7 +9,11 @@ const MAX_SCENES = 7;
 const MAX_NARRATION_CHARS = 80; // 单场景上限（总量另控 ≤ 360 字）
 const TOTAL_NARRATION_BUDGET = 360; // 中文 4 字/秒 → 90 秒上限
 
-const SCRIPT_PROMPT = `你在写一条 60~90 秒的"动效图解"短视频解说脚本，并且为每个场景设计分镜（storyboard）。画面由视觉原语自由组合而成——每次生成的视频都应当有独特的分镜设计，不要每条视频都用同一种组合。
+const SCRIPT_PROMPT = `你在为 user 消息里那篇文章制作一条 60~90 秒的短视频。这条视频不是文章的摘要、不是导读，而是文章的"预告片 + 反差版"：
+- 视频只做文章做不了的三件事：时间悬念（把最反直觉的事实留到中后段才揭示）、数字冲击（大数字滚动/对比条制造的瞬时压迫感）、行动冲动（看完带着一个没答案的问题去点文章）。
+- 文章已经讲透的论证过程、命令细节、类比展开，视频一律不讲——观众点进文章就是要看这些，你讲了反而剥夺了点开的理由。
+- 允许从文章拿走的只有：事实、数字、专有名词。叙事顺序、取舍、节奏必须重新设计，禁止沿用文章章节顺序。
+画面由视觉原语自由组合而成——每次生成的视频都应当有独特的分镜设计，不要每条视频都用同一种组合。
 输出 JSON：
 { "scenes": [{
   "keyword": "场景关键词（≤8 字，如 自动切换 / 187k Star）",
@@ -40,6 +44,11 @@ const SCRIPT_PROMPT = `你在写一条 60~90 秒的"动效图解"短视频解说
 - {"type":"compare","beats":[{"atWord":"词","label":"对比项","content":"数值权重"}...2~4 个]}  —— 对比条
 
 分镜设计铁律（违反任何一条 = 不合格）：
+0. 文章-视频分工铁律：文章是你的素材库，不是你的大纲。出现以下任何一种情况即不合格：
+   - 场景 keyword 与文章章节 heading 重合超过 6 个字
+   - 场景按文章章节顺序推进
+   - 把文章的结论完整复述给观众（视频给"结果的一半"+情绪，完整结论留给文章）
+   - 出现"完整拆解/完整分析见下方链接"这类台词，除非视频确实留了没讲的问题在文章里
 1. 画面文字必须具体：直接用素材里的真实名词/数字/术语（如 "Blackwell 售罄"、"毛利率 73.4%"、"九道工序"），禁止"元素一/示例/待补充"这类占位词
 2. narration 里的每个关键数字/名词都应该出现在该场景的某一层里（文字、卡片标题、metric、stats、timeline step）——画面与口播同步推进
 3. 复合原语（flowpath/stackboxes/terminal/compare）必须内联 beats，label/content 从 narration 和素材中提炼具体内容
@@ -50,7 +59,13 @@ const SCRIPT_PROMPT = `你在写一条 60~90 秒的"动效图解"短视频解说
 入场动效 fx 语义：fade-up 通用默认 / spring 数字成就反差 / scramble 开场解码 / border-beam 卡片点亮 / spotlight 聚焦揭示 / scale-blur 转场聚焦
 
 其余规则（narration/beats/结构）：
-- 结构：5-7 个场景 = 开场钩子（hookScene: true）→ 3-5 个精华洞察 → 结尾行动卡（keyword 为行动文案，narration 引导去页面下方链接）
+- 先做取舍（内部完成，不输出）：从文章挑 1 个"钩子事实"（最反直觉/最震撼的单点）和 2~3 个"文章没展开的角落"（一笔带过的细节、反方观点、代价与边界）；文章的主体论证章节整章跳过，不进视频。
+- 结构三选一，禁止默认总用第一式：
+  A 悬念式：抛反常识断言 → 给一半证据 → 留一个"答案在文章里"的缺口 → CTA
+  B 冲击式：2~3 个递进数字场景（metric/stats/compare）→ 一个反转（反方数字/代价/边界）→ CTA
+  C 显微式：只取文章里一个最精彩的微观过程（一条命令从输入到输出、一次转换的内部流水），放大 5 倍讲透，其余全部不提 → CTA
+- 场景数 4~6；相邻场景的信息关系禁止全是并列补充（文章已经在做并列），至少一处转折/对抗/留白
+- 结尾行动卡：narration 必须抛出一个视频里没给答案的问题（如"8000 亿缺口到底怎么算出来的？"），答案在文章里；禁止总结式 CTA（"以上就是……"）
 - keyword ≤8 字；note ≤20 字；beats 的 atWord 必须是 narration 中出现过的词
 - narration 口语短句 30-60 字，结尾用句号/问号/感叹号；全部场景 narration 总字数 ≤360 字
 - 素材里的图表（diagrams）可以出现在分镜（用复合原语或 metric 讲图）
@@ -88,6 +103,43 @@ function narrationLen(n: string): number {
   return n.replace(/\s/g, "").length;
 }
 
+/** 跨视频多样性：读最近一份分镜产物，提取开场 fx/结构供本条回避（失败静默跳过） */
+function recentFxBrief(): string {
+  try {
+    const fsSync = require("node:fs") as typeof import("node:fs");
+    const pathSync = require("node:path") as typeof import("node:path");
+    const root = pathSync.join(PUBLIC_ASSETS_DIR, "videos");
+    if (!fsSync.existsSync(root)) return "";
+    const dirs = fsSync
+      .readdirSync(root)
+      .filter((d) => d.endsWith("-assets"))
+      .map((d) => {
+        const p = pathSync.join(root, d, "script.json");
+        try {
+          return { p, m: fsSync.statSync(p).mtimeMs };
+        } catch {
+          return null;
+        }
+      })
+      .filter(Boolean)
+      .sort((a, b) => b!.m - a!.m)
+      .slice(0, 1);
+    if (!dirs.length) return "";
+    const data = JSON.parse(fsSync.readFileSync(dirs[0]!.p, "utf8"));
+    const scenes = Array.isArray(data) ? data : data.scenes ?? [];
+    if (!scenes.length) return "";
+    const first = scenes[0].storyboard;
+    const fxs: string[] = [];
+    for (const l of first?.layers ?? []) {
+      if (l.enter?.fx) fxs.push(l.enter.fx);
+    }
+    const kws = scenes.map((s: { keyword?: string }) => s.keyword).slice(0, 6);
+    return `\n\n=== 站内最近一条视频的分镜概况（你的开场 fx、首个场景类型、场景推进逻辑必须与它明显不同） ===\n开场 fx: ${fxs.join(", ") || "无"}\n场景序列: ${kws.join(" → ")}`;
+  } catch {
+    return "";
+  }
+}
+
 /** 生成短视频脚本；LLM 不可用时降级为直接使用文章章节 */
 export async function generateScript(page: PageContent): Promise<ScriptScene[]> {
   try {
@@ -101,7 +153,7 @@ export async function generateScript(page: PageContent): Promise<ScriptScene[]> 
       await chat(
         [
           { role: "system", content: SCRIPT_PROMPT },
-          { role: "user", content: `视频主题：${page.title}\n\n${article.slice(0, 9000)}` },
+          { role: "user", content: `视频主题：${page.title}\n\n${article.slice(0, 9000)}${recentFxBrief()}` },
         ],
         { jsonMode: true, temperature: 0.5 }
       )
@@ -281,7 +333,8 @@ function normalizeLayer(v: unknown): import("./types").StoryboardLayer | undefin
       const steps = l.steps
         .filter((x): x is string => typeof x === "string")
         .filter((x) => x.trim().length > 0)
-        .map((x) => x.trim().slice(0, 10))
+        // 显示宽度截断：CJK 记 2、ASCII 记 1，避免 "Content Un" 式半截英文
+        .map((x) => truncateByWidth(x.trim(), 18))
         .slice(0, 5);
       if (steps.length < 2) return undefined;
       return { type: "timeline", steps, ...(enter ? { enter } : {}) };
@@ -293,9 +346,9 @@ function normalizeLayer(v: unknown): import("./types").StoryboardLayer | undefin
         .filter((x) => typeof x.label === "string" && typeof x.value === "string" && x.label.trim() && x.value.trim())
         .slice(0, 4)
         .map((x) => ({
-          label: String(x.label).slice(0, 14),
-          value: String(x.value).slice(0, 12),
-          ...(typeof x.delta === "string" && x.delta.trim() ? { delta: String(x.delta).slice(0, 16) } : {}),
+          label: truncateByWidth(String(x.label), 20),
+          value: truncateByWidth(String(x.value), 16),
+          ...(typeof x.delta === "string" && x.delta.trim() ? { delta: truncateByWidth(String(x.delta), 20) } : {}),
         }));
       if (stats.length < 2) return undefined;
       return { type: "stats", stats, ...(enter ? { enter } : {}) };
@@ -303,7 +356,7 @@ function normalizeLayer(v: unknown): import("./types").StoryboardLayer | undefin
     case "quote": {
       if (typeof l.quote !== "string" || l.quote.trim().length < 4) return undefined;
       const author = typeof l.author === "string" && l.author.trim() ? l.author.trim().slice(0, 20) : undefined;
-      return { type: "quote", quote: l.quote.trim().slice(0, 44), ...(author ? { author } : {}), ...(enter ? { enter } : {}) };
+      return { type: "quote", quote: truncateByWidth(l.quote.trim(), 52), ...(author ? { author } : {}), ...(enter ? { enter } : {}) };
     }
     case "photo":
     case "clip": {
@@ -347,6 +400,19 @@ function normalizeStoryboard(v: unknown): import("./types").Scene["storyboard"] 
     ...(layers.length ? { layers } : {}),
     ...(transitions ? { transitions } : {}),
   };
+}
+
+/** 显示宽度截断：CJK 字符记 2、ASCII 记 1，超宽截断加省略号（避免半截英文词） */
+function truncateByWidth(s: string, maxWidth: number): string {
+  let w = 0;
+  for (let i = 0; i < s.length; i++) {
+    const code = s.charCodeAt(i);
+    w += code > 0x2e80 ? 2 : 1;
+    if (w > maxWidth) {
+      return `${s.slice(0, i)}…`;
+    }
+  }
+  return s;
 }
 
 function normalize(scenes: ScriptScene[]): ScriptScene[] {

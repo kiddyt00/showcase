@@ -147,6 +147,7 @@ export default function ChatConsole() {
       .catch(() => {});
   }, [sessionId]);
 
+  const [pageStale, setPageStale] = useState(false); // Agent 侧写入后面板数据过期标记
   useEffect(() => {
     if (!currentSlug) return setPage(null);
     fetch(`/api/pages/${currentSlug}`)
@@ -154,6 +155,14 @@ export default function ChatConsole() {
       .then((d) => setPage(d.page ?? null))
       .catch(() => setPage(null));
   }, [currentSlug]);
+
+  /* Agent 写入检测：工具事件出现"页面已更新/创建/切换"时标记面板数据过期，提示用户刷新 */
+  const markPageStale = () => setPageStale(true);
+  useEffect(() => {
+    if (!pageStale) return;
+    const t = setTimeout(() => setPageStale(false), 8000); // 8s 后自动静默（用户已见到提示）
+    return () => clearTimeout(t);
+  }, [pageStale]);
 
   /* 分析任务轮询：2.5s 一次；任务状态变化时联动对话流与元素面板 */
   useEffect(() => {
@@ -263,6 +272,11 @@ export default function ChatConsole() {
       ]);
       if (data.currentSlug) setCurrentSlug(data.currentSlug);
       refreshSessions(); // 新会话首次发言后立即出现在侧栏
+      // Agent 工具写入了页面 → 面板数据过期提示（避免面板 blur 保存静默覆盖 Agent 的修改）
+      const pageMutating = (data.toolEvents as ToolEvent[] | undefined)?.find((t) =>
+        /^(analyze_source|update_page|update_section|add_section|delete_section|set_metadata|add_diagram|open_page)$/.test(t.name)
+      );
+      if (pageMutating && data.currentSlug === currentSlug) markPageStale();
     } catch (err) {
       setMessages((m) => [
         ...m,
@@ -315,12 +329,23 @@ export default function ChatConsole() {
     return () => window.removeEventListener("keydown", onKey);
   }, []);
 
+  const reloadPage = () => {
+    if (!currentSlug) return;
+    setPageStale(false);
+    fetch(`/api/pages/${currentSlug}`)
+      .then((r) => r.json())
+      .then((d) => setPage(d.page ?? null))
+      .catch(() => {});
+  };
+
   const elementPanel = (
     <ElementPanel
       key={currentSlug ?? "none"}
       page={page}
       currentSlug={currentSlug}
       saveError={saveError}
+      stale={pageStale}
+      onReload={reloadPage}
       onPatch={patchPage}
       onDelete={deletePage}
     />
@@ -719,12 +744,16 @@ function ElementPanel({
   page,
   currentSlug,
   saveError,
+  stale,
+  onReload,
   onPatch,
   onDelete,
 }: {
   page: PageContent | null;
   currentSlug?: string;
   saveError: string;
+  stale: boolean;
+  onReload: () => void;
   onPatch: (patch: Partial<PageContent>) => void;
   onDelete: (slug: string) => void;
 }) {
@@ -736,6 +765,15 @@ function ElementPanel({
           <span className="font-mono text-[10px] text-[#7a8698]">{currentSlug}</span>
         )}
       </div>
+
+      {stale && page && (
+        <div className="rounded border border-yellow-800 bg-yellow-950/40 px-2.5 py-1.5 text-[11px] text-yellow-300">
+          ⚠ Agent 刚修改了此页面，面板内容可能已过期。
+          <button onClick={onReload} className="ml-2 text-emerald-400 underline">
+            加载最新
+          </button>
+        </div>
+      )}
 
       {saveError && (
         <p className="rounded border border-red-900 bg-red-950/60 px-2.5 py-1.5 font-mono text-[11px] text-red-300">

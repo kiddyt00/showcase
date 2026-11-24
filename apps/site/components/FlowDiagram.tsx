@@ -36,10 +36,10 @@ const COL_GAP = 90;
 const ROW_GAP = 64;
 const PADDING = 24;
 
-const ACCENT = "#22d3ee";
-const ACCENT_DIM = "rgba(34,211,238,0.35)";
+const ACCENT = "var(--accent)";
+const ACCENT_DIM = "color-mix(in srgb, var(--accent) 35%, transparent)";
 
-export default function FlowDiagram({ spec, dark = true }: { spec: unknown; dark?: boolean }) {
+export default function FlowDiagram({ spec }: { spec: unknown; dark?: boolean }) {
   const parsed = useMemo<FlowSpec | null>(() => {
     try {
       const s = spec as FlowSpec;
@@ -129,10 +129,10 @@ export default function FlowDiagram({ spec, dark = true }: { spec: unknown; dark
   }
 
   const lineColor = (e: SpecEdge, i: number) => {
-    if (related && !related.has(i)) return dark ? "#263248" : "#e5e7eb";
-    if (e.kind === "async") return "#8b96a8";
+    if (related && !related.has(i)) return "var(--border)";
+    if (e.kind === "async") return "var(--muted)";
     if (e.kind === "primary" || hoverId || selectedId) return ACCENT;
-    return dark ? "#4b5b73" : "#9ca3af";
+    return "color-mix(in srgb, var(--fg) 40%, transparent)";
   };
 
   return (
@@ -172,7 +172,7 @@ export default function FlowDiagram({ spec, dark = true }: { spec: unknown; dark
                       style={{
                         fontFamily: "ui-monospace, monospace",
                         fontSize: 12,
-                        fill: active ? "#e6edf3" : "#6b7280",
+                        fill: active ? "var(--fg)" : "var(--muted)",
                         opacity: inView ? 1 : 0,
                         transition: "opacity 400ms",
                       }}
@@ -210,9 +210,9 @@ export default function FlowDiagram({ spec, dark = true }: { spec: unknown; dark
                       : "scale(1)"
                     : "translateY(14px) scale(0.95)",
                   transition: `opacity 500ms ${i * 260}ms, transform 500ms ${i * 260}ms, box-shadow 200ms, border-color 200ms`,
-                  border: `1.5px solid ${isFocus ? ACCENT : dark ? "#263248" : "#d1d5db"}`,
+                  border: `1.5px solid ${isFocus ? ACCENT : "var(--border)"}`,
                   borderRadius: 10,
-                  background: dark ? "#131b2e" : "#ffffff",
+                  background: "var(--card)",
                   boxShadow: isFocus ? `0 0 20px ${ACCENT_DIM}` : "none",
                   cursor: "pointer",
                   display: "flex",
@@ -232,7 +232,7 @@ export default function FlowDiagram({ spec, dark = true }: { spec: unknown; dark
                       right: -6,
                       fontSize: 10,
                       fontFamily: "ui-monospace, monospace",
-                      background: "#0a0e1a",
+                      background: "var(--bg)",
                       color: ACCENT,
                       border: `1px solid ${ACCENT_DIM}`,
                       borderRadius: 4,
@@ -246,14 +246,14 @@ export default function FlowDiagram({ spec, dark = true }: { spec: unknown; dark
                   style={{
                     fontSize: n.sub ? 14 : 15,
                     fontWeight: n.focal ? 700 : 600,
-                    color: isFocus ? ACCENT : "#e6edf3",
+                    color: isFocus ? ACCENT : "var(--fg)",
                     lineHeight: 1.2,
                   }}
                 >
                   {n.label}
                 </span>
                 {n.sub ? (
-                  <span style={{ fontSize: 11, color: "#8b96a8", lineHeight: 1.2 }}>{n.sub}</span>
+                  <span style={{ fontSize: 11, color: "var(--muted)", lineHeight: 1.2 }}>{n.sub}</span>
                 ) : null}
               </div>
             );

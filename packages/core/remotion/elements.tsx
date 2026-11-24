@@ -668,7 +668,7 @@ export const StepTimeline: React.FC<{
                   width: isLast ? 84 : 64,
                   height: isLast ? 84 : 64,
                   borderRadius: "50%",
-                  backgroundColor: isLast ? T.accent : C.panel2,
+                  backgroundColor: isLast ? T.accent : "#161d28",
                   border: `4px solid ${isLast ? T.accent : "rgba(16,185,129,0.5)"}`,
                   display: "flex",
                   alignItems: "center",
@@ -687,12 +687,16 @@ export const StepTimeline: React.FC<{
                   fontFamily: "sans-serif",
                   fontSize: 34,
                   fontWeight: 700,
-                  color: isLast ? T.fg : C.sub,
+                  color: isLast ? T.fg : T.sub,
                   textAlign: "center",
                   maxWidth: 280,
+                  display: "-webkit-box",
+                  WebkitLineClamp: 2,
+                  WebkitBoxOrient: "vertical",
+                  overflow: "hidden",
                 }}
               >
-                {s.slice(0, 10)}
+                {s}
               </div>
             </div>
           );
@@ -788,7 +792,7 @@ export const QuoteCard: React.FC<{
           textAlign: "left",
         }}
       >
-        {quote.slice(0, 44)}
+        {quote.length > 44 ? `${quote.slice(0, 44)}…` : quote}
       </div>
       {author ? (
         <div
