@@ -26,7 +26,7 @@ async function main() {
   console.log("totalSeconds:", total, "sceneCount:", r.scenes.length);
   for (const s of r.scenes) {
     console.log(
-      `scene: heading=${s.heading} visual=${s.visual ?? "text"} seconds=${s.seconds} timelineWords=${s.timelineWords ?? 0}`
+      `scene: keyword=${s.keyword ?? s.heading} visual=${s.visual ?? "text"} note=${s.note ?? "-"} narrationChars=${s.narrationChars ?? "-"} seconds=${s.seconds} timelineWords=${s.timelineWords ?? 0}`
     );
   }
 }

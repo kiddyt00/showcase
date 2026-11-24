@@ -79,6 +79,9 @@ export async function renderVideo(
     path: outPath,
     scenes: spec.scenes.map((s) => ({
       heading: s.heading,
+      keyword: s.keyword,
+      note: s.note,
+      narrationChars: s.narration.replace(/\s/g, "").length,
       seconds: Math.round(s.durationFrames / FPS),
       visual: s.visual ?? ("text" as const),
       timelineWords: s.timeline?.length ?? 0,
@@ -130,7 +133,7 @@ async function buildSpec(
 
   /** visual=diagram 的素材解析：标题精确匹配 → 未使用的第一张图（有 svg 或 mp4） */
   function pickDiagram(scene: ScriptScene): Diagram | undefined {
-    const exact = diagramByTitle.get(scene.heading.trim());
+    const exact = diagramByTitle.get((scene.heading ?? scene.keyword ?? "").trim());
     if (exact) return exact;
     return (page.diagrams ?? []).find((d) => !usedDiagramIds.has(d.id) && (d.mp4Url || d.svgUrl));
   }
@@ -138,7 +141,7 @@ async function buildSpec(
   /** visual=code 的素材解析：标题匹配章节的 code → 未使用的第一个含 code 章节 */
   function pickCode(scene: ScriptScene): NonNullable<Section["code"]> | undefined {
     const exact = page.sections.find(
-      (sec) => sec.heading.trim() === scene.heading.trim() && sec.code?.content
+      (sec) => sec.heading.trim() === (scene.heading ?? scene.keyword ?? "").trim() && sec.code?.content
     );
     if (exact?.code) return exact.code;
     const first = page.sections.find(
@@ -190,7 +193,7 @@ async function buildSpec(
     if (scene.visual === "code") {
       const code = pickCode(scene);
       if (code) {
-        usedCodeHeadings.add(scene.heading);
+        usedCodeHeadings.add(scene.heading ?? scene.keyword ?? "");
         return { code: { language: code.language, content: code.content } };
       }
       return {};
@@ -239,7 +242,9 @@ async function buildSpec(
       );
     }
     scenes.push({
-      heading: s.heading,
+      heading: s.keyword || s.heading || "untitled",
+      keyword: s.keyword,
+      note: s.note,
       bullets: s.bullets,
       narration: s.narration,
       audioFile: audioFileRel,

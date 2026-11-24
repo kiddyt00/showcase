@@ -34,10 +34,14 @@ export interface Scene {
   counter?: { label: string; value: number; suffix?: string };
   /** 词级时间戳（TTS 产出，音画同步用），空/缺失时字幕与动画退回均分驱动 */
   timeline?: { word: string; startMs: number; endMs: number }[];
-  /** 动画模板：text=标题+bullets 默认布局，其余渲染对应模板组件 */
-  visual?: "text" | "diagram" | "code" | "counter" | "stepflow" | "stacklayers" | "terminal" | "slide";
+  /** 动画模板：v4 动效图解元素（flowpath/stackboxes/terminal/counter/compare/text），diagram 走 SeeCode 动画，slide 走幻灯片截图；stepflow/stacklayers 为 v3 兼容别名 */
+  visual?: "text" | "diagram" | "code" | "counter" | "flowpath" | "stackboxes" | "terminal" | "compare" | "stepflow" | "stacklayers" | "slide";
+  /** 超大关键词（≤8 字）：替代旧 heading 大标题 */
+  keyword?: string;
+  /** 关键词下的一行小注（≤20 字） */
+  note?: string;
   /** 模板节拍：atWord 匹配 timeline 中的词 → 动画触发时刻 */
-  beats?: { atWord: string; action: string; content?: string; label?: string }[];
+  beats?: { atWord: string; action?: string; content?: string; label?: string }[];
   /** 开场钩子场景标记（来自脚本层） */
   hookScene?: boolean;
 }
@@ -55,6 +59,12 @@ export interface VideoJobSpec {
 /** 章节摘要：给播放器时间轴用 */
 export interface SceneSummary {
   heading: string;
+  /** 超大关键词（≤8 字，v4 动效图解） */
+  keyword?: string;
+  /** 一行小注（≤20 字） */
+  note?: string;
+  /** 口播字数（去空白） */
+  narrationChars?: number;
   /** 该场景时长（秒） */
   seconds: number;
   /** 动画模板类型（缺省 text；验证/观测用） */

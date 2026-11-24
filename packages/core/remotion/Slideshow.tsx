@@ -1,6 +1,6 @@
 import { AbsoluteFill, Audio, Img, OffthreadVideo, Sequence, interpolate, staticFile, useCurrentFrame, useVideoConfig } from "remotion";
 import { DIMENSIONS, Orientation, Scene } from "../src/video/types";
-import { StepFlow, StackLayers, TerminalSim } from "./components";
+import { FlowPath, StackBoxes, TerminalSim, Counter as CounterElement, CompareBars } from "./elements";
 
 export interface SlideshowProps {
   title: string;
@@ -14,43 +14,31 @@ export interface SlideshowProps {
 
 const T = { bg: "#0b0f0e", fg: "#f4f4f5", accent: "#10b981", sub: "#a1a1aa" };
 
-/** 逐词高亮字幕：timeline 命中当前帧的词 accent 色，其余 muted；timeline 空则由调用方回退整句样式 */
-const WordHighlightSubtitle: React.FC<{
+/** 底部字幕（v4 压缩）：单行、字号 24，仅当前句短语（timeline 最后 10 个词拼接） */
+const SubtitleLine: React.FC<{
   timeline: NonNullable<Scene["timeline"]>;
-  nowMs: number;
-}> = ({ timeline, nowMs }) => {
-  // 当前词 = startMs <= now 的最后一个词（读后保持高亮衰减更自然：已读 muted、当前 accent、未读更暗）
-  let curIdx = -1;
-  for (let i = 0; i < timeline.length; i++) {
-    if (timeline[i].startMs <= nowMs) curIdx = i;
-    else break;
-  }
+  narration: string;
+}> = ({ timeline, narration }) => {
+  const text = timeline.length
+    ? timeline.slice(-10).map((w) => w.word).join("")
+    : narration.length > 40
+      ? narration.slice(0, 40) + "…"
+      : narration;
   return (
-    <span style={{ display: "inline", maxWidth: "100%" }}>
-      {timeline.map((w, i) => {
-        const isCur = i === curIdx;
-        const past = i < curIdx;
-        // 中文字间不加空隙；拉丁词与下个拉丁词之间保留词间距
-        const next = timeline[i + 1];
-        const latinBoundary =
-          next && /[A-Za-z0-9]$/.test(w.word) && /^[A-Za-z0-9]/.test(next.word);
-        return (
-          <span
-            key={i}
-            style={{
-              fontSize: 32,
-              fontFamily: "sans-serif",
-              color: isCur ? T.accent : T.fg,
-              opacity: isCur ? 1 : past ? 0.55 : 0.85,
-              fontWeight: isCur ? 700 : 400,
-              textShadow: isCur ? "0 0 18px rgba(16,185,129,0.5)" : "none",
-              marginRight: latinBoundary ? "0.3em" : 0,
-            }}
-          >
-            {w.word}
-          </span>
-        );
-      })}
+    <span
+      style={{
+        fontSize: 24,
+        fontFamily: "sans-serif",
+        color: T.fg,
+        opacity: 0.85,
+        whiteSpace: "nowrap",
+        overflow: "hidden",
+        textOverflow: "ellipsis",
+        maxWidth: "70%",
+        display: "block",
+      }}
+    >
+      {text}
     </span>
   );
 };
@@ -270,6 +258,11 @@ const Slideshow: React.FC<SlideshowProps> = ({ title, icon, tags, scenes, slug }
   const local = frame - starts[idx];
   const dur = scene.durationFrames;
 
+  // v4 关键词与小注：keyword 来自 scene.keyword 或 beats 最后一个 label / heading
+  const lastBeatLabel = scene.beats?.length ? scene.beats[scene.beats.length - 1].label : undefined;
+  const keyword = (scene.keyword || lastBeatLabel || scene.heading || "").slice(0, 8);
+  const note = (scene.note || "").slice(0, 20);
+
   // 转场方向：按索引奇偶交替"从右滑入"/"从左滑入"
   const fromRight = idx % 2 === 0;
   const inSign = fromRight ? 1 : -1;
@@ -291,11 +284,13 @@ const Slideshow: React.FC<SlideshowProps> = ({ title, icon, tags, scenes, slug }
   // 代码打字机 / 数字滚动场景
   const hasCode = !isIntro && !isEndCard && !hasImage && !!scene.code;
   const hasCounter = !isIntro && !isEndCard && !hasImage && !hasCode && !!scene.counter;
-  // P1 动画模板：stepflow / stacklayers / terminal（timeline 为空时组件内部均分降级）
+  // v4 动效图解元素：flowpath / stackboxes / terminal / counter / compare（stepflow/stacklayers 为 v3 兼容别名）
   const tplVisual = scene.visual;
   const hasTemplate =
     !isIntro && !isEndCard && !hasImage && !hasCode && !hasCounter &&
-    (tplVisual === "stepflow" || tplVisual === "stacklayers" || tplVisual === "terminal");
+    (tplVisual === "flowpath" || tplVisual === "stackboxes" || tplVisual === "terminal" ||
+      tplVisual === "counter" || tplVisual === "compare" ||
+      tplVisual === "stepflow" || tplVisual === "stacklayers");
   // 幻灯片模式画面：slideFile 存在时全屏铺满（cover），整段场景轻微 Ken Burns 1.0 → 1.04
   const hasSlide = !!scene.slideFile;
   const kbSlide = hasSlide
@@ -435,30 +430,62 @@ const Slideshow: React.FC<SlideshowProps> = ({ title, icon, tags, scenes, slug }
             </p>
           </div>
         ) : hasTemplate ? (
-          /* P1 模板场景：小字场景名 + 模板组件（beats/timeline 驱动动画） */
-          <>
+          /* v4 动效图解：小字场景名 + 超大关键词 + 一行小注 + 动效元素（占全宽 80%） */
+          <div style={{ display: "flex", flexDirection: "column", width: "100%", alignItems: "flex-start" }}>
             <div
               style={{
                 fontFamily: "sans-serif",
-                fontSize: 36,
+                fontSize: 30,
                 fontWeight: 600,
                 color: T.sub,
                 letterSpacing: 2,
-                marginBottom: 8,
                 opacity: inAnim,
               }}
             >
               {idx}. {scene.heading}
             </div>
-            <div style={{ width: 280, height: 6, borderRadius: 3, backgroundColor: T.accent, opacity: underline, transformOrigin: "left center" }} />
-            {tplVisual === "stepflow" ? (
-              <StepFlow beats={scene.beats ?? []} timeline={scene.timeline ?? []} durationFrames={dur} fps={fps} frame={local} />
-            ) : tplVisual === "stacklayers" ? (
-              <StackLayers beats={scene.beats ?? []} timeline={scene.timeline ?? []} durationFrames={dur} fps={fps} frame={local} />
-            ) : (
-              <TerminalSim beats={scene.beats ?? []} timeline={scene.timeline ?? []} durationFrames={dur} fps={fps} frame={local} />
-            )}
-          </>
+            <h1
+              style={{
+                fontFamily: "sans-serif",
+                fontSize: keyword ? (keyword.length <= 4 ? 96 : 72) : 72,
+                fontWeight: 900,
+                color: T.fg,
+                margin: 0,
+                marginTop: 10,
+                lineHeight: 1.1,
+                opacity: inAnim,
+              }}
+            >
+              {keyword}
+            </h1>
+            {note ? (
+              <div
+                style={{
+                  fontFamily: "sans-serif",
+                  fontSize: 18,
+                  color: T.sub,
+                  marginTop: 10,
+                  opacity: inAnim,
+                }}
+              >
+                {note}
+              </div>
+            ) : null}
+            {/* 动效元素区域：全宽 80% 居中 */}
+            <div style={{ width: "80%", alignSelf: "center", flex: 1, display: "flex", flexDirection: "column", marginTop: 20, minHeight: 0 }}>
+              {tplVisual === "flowpath" || tplVisual === "stepflow" ? (
+                <FlowPath beats={scene.beats ?? []} timeline={scene.timeline ?? []} durationFrames={dur} fps={fps} frame={local} />
+              ) : tplVisual === "stackboxes" || tplVisual === "stacklayers" ? (
+                <StackBoxes beats={scene.beats ?? []} timeline={scene.timeline ?? []} durationFrames={dur} fps={fps} frame={local} />
+              ) : tplVisual === "terminal" ? (
+                <TerminalSim beats={scene.beats ?? []} timeline={scene.timeline ?? []} durationFrames={dur} fps={fps} frame={local} />
+              ) : tplVisual === "counter" ? (
+                <CounterElement beats={scene.beats ?? []} timeline={scene.timeline ?? []} durationFrames={dur} fps={fps} frame={local} />
+              ) : (
+                <CompareBars beats={scene.beats ?? []} timeline={scene.timeline ?? []} durationFrames={dur} fps={fps} frame={local} />
+              )}
+            </div>
+          </div>
         ) : (
           <>
             <WordFadeTitle
@@ -557,7 +584,7 @@ const Slideshow: React.FC<SlideshowProps> = ({ title, icon, tags, scenes, slug }
               </li>
             ))}
           </ul>
-        ) : !isEndCard ? (
+        ) : !isEndCard && !hasTemplate ? (
           <div style={{ display: "flex", flexWrap: "wrap", gap: 16, rowGap: 14, marginTop: 40, opacity: inAnim, maxWidth: "100%" }}>
             {tags.slice(0, 8).map((t) => (
               <span key={t} style={{ fontFamily: "sans-serif", fontSize: 36, color: T.accent, border: `2px solid ${T.accent}`, borderRadius: 999, padding: "6px 24px" }}>
@@ -582,21 +609,7 @@ const Slideshow: React.FC<SlideshowProps> = ({ title, icon, tags, scenes, slug }
         }}
       >
         <span style={{ fontSize: 30, color: T.sub }}>ShowCase</span>
-        {!isEndCard ? (
-          !isIntro && scene.timeline?.length ? (
-            /* 逐词高亮字幕（音画同步）：当前帧时间 → timeline 命中词 accent 色 */
-            <div style={{ maxWidth: "70%", maxHeight: 120, overflow: "hidden" }}>
-              <WordHighlightSubtitle
-                timeline={scene.timeline}
-                nowMs={((starts[idx] + local) / fps) * 1000}
-              />
-            </div>
-          ) : (
-            <span style={{ fontSize: 32, color: T.fg, opacity: 0.85, maxWidth: "70%" }}>
-              {isIntro ? "" : scene.narration.length > 60 ? scene.narration.slice(0, 60) + "…" : scene.narration}
-            </span>
-          )
-        ) : null}
+        {!isEndCard && !isIntro ? <SubtitleLine timeline={scene.timeline ?? []} narration={scene.narration} /> : null}
       </div>
 
       {/* 全片进度条：底部 2px 细条，accent 色 */}
