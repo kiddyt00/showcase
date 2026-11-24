@@ -70,6 +70,12 @@ const db =
         finished_at TEXT
       );
       CREATE INDEX IF NOT EXISTS idx_analyze_session ON analyze_jobs(session_id, created_at DESC);
+      CREATE TABLE IF NOT EXISTS opening_ledger (
+        mode TEXT NOT NULL,
+        slug TEXT NOT NULL,
+        chosen_at TEXT NOT NULL
+      );
+      CREATE INDEX IF NOT EXISTS idx_opening_mode ON opening_ledger(mode);
     `);
     return d;
   })();
@@ -95,6 +101,12 @@ try {
 // 轻量迁移：video_jobs 补 scenes 列（场景摘要 JSON，播放器章节时间轴）
 try {
   db.exec(`ALTER TABLE video_jobs ADD COLUMN scenes TEXT DEFAULT '[]'`);
+} catch {
+  /* 列已存在，忽略 */
+}
+// 轻量迁移：video_jobs 补 mode 列（区分 quick/standard/slides/hyperframes 产物；quick 与标准版同 (slug,orientation) 主键共存）
+try {
+  db.exec(`ALTER TABLE video_jobs ADD COLUMN mode TEXT DEFAULT 'standard'`);
 } catch {
   /* 列已存在，忽略 */
 }
@@ -295,17 +307,38 @@ export async function uniqueSlugFrom(raw: string | undefined | null, title: stri
   return `p-${Date.now().toString(36)}`;
 }
 
+/* ---------- 开场模式台账（r3-open：代码定规则 + LLM 填空） ---------- */
+
+/** 记录一次开场模式分配（pickOpeningMode 写入，按 slug 观测轮换是否均匀） */
+export function recordOpeningMode(mode: string, slug: string): void {
+  db.prepare(`INSERT INTO opening_ledger (mode, slug, chosen_at) VALUES (?, ?, ?)`).run(
+    mode,
+    slug,
+    new Date().toISOString()
+  );
+}
+
+/** 各开场模式的已用次数（GROUP BY mode；未出现过的模式计 0 由调用方兜底） */
+export function getOpeningCounts(): Record<string, number> {
+  const rows = db
+    .prepare(`SELECT mode, COUNT(*) AS n FROM opening_ledger GROUP BY mode`)
+    .all() as { mode: string; n: number }[];
+  const counts: Record<string, number> = {};
+  for (const r of rows) counts[r.mode] = r.n;
+  return counts;
+}
+
 /* ---------- 视频任务 ---------- */
 
 import type { SceneSummary, VideoJob, VideoStatus, Orientation } from "./video/types";
 
 export function upsertVideoJob(job: VideoJob): void {
   db.prepare(
-    `INSERT INTO video_jobs (slug,orientation,status,error,video_path,created_at,progress,scenes)
-     VALUES (@slug,@orientation,@status,@error,@videoPath,@createdAt,@progress,@scenes)
+    `INSERT INTO video_jobs (slug,orientation,status,error,video_path,created_at,progress,scenes,mode)
+     VALUES (@slug,@orientation,@status,@error,@videoPath,@createdAt,@progress,@scenes,@mode)
      ON CONFLICT(slug,orientation) DO UPDATE SET
        status=excluded.status, error=excluded.error, video_path=excluded.video_path,
-       progress=excluded.progress, scenes=excluded.scenes`
+       progress=excluded.progress, scenes=excluded.scenes, mode=excluded.mode`
   ).run({
     slug: job.slug,
     orientation: job.orientation,
@@ -315,6 +348,7 @@ export function upsertVideoJob(job: VideoJob): void {
     createdAt: job.createdAt,
     progress: job.progress ?? 0,
     scenes: JSON.stringify(job.scenes ?? []),
+    mode: job.mode ?? "standard",
   });
 }
 
@@ -333,7 +367,7 @@ export function getVideoJob(slug: string, orientation: Orientation): VideoJob | 
   const row = db
     .prepare(`SELECT * FROM video_jobs WHERE slug = ? AND orientation = ?`)
     .get(slug, orientation) as
-    | { slug: string; orientation: string; status: string; error: string | null; video_path: string | null; created_at: string; progress: number | null; scenes: string | null }
+    | { slug: string; orientation: string; status: string; error: string | null; video_path: string | null; created_at: string; progress: number | null; scenes: string | null; mode: string | null }
     | undefined;
   if (!row) return null;
   let scenes: SceneSummary[] = [];
@@ -350,6 +384,7 @@ export function getVideoJob(slug: string, orientation: Orientation): VideoJob | 
     scenes,
     videoPath: row.video_path ?? undefined,
     progress: row.progress ?? undefined,
+    mode: (row.mode as VideoJob["mode"]) ?? "standard",
     createdAt: row.created_at,
   };
 }

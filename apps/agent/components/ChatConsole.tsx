@@ -48,7 +48,7 @@ const QUICK_PROMPTS = [
   { label: "加架构图", prompt: "为当前页面添加一张架构图" },
   { label: "优化标题", prompt: "把当前页面标题改得更吸引人，摘要也更精炼" },
   { label: "渲染视频", prompt: "为当前页面渲染解说视频" },
-  { label: "HF 渲染", prompt: "为当前页面用 hyperframes 引擎渲染横版视频" },
+  { label: "HF 渲染", prompt: "为当前页面用 hyperframes 引擎渲染 30 秒快览版视频" },
 ];
 
 const SESSIONS_KEY = "showcase-sessions";

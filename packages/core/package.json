@@ -20,6 +20,7 @@
     "./deepseek": "./src/deepseek.ts",
     "./video/pipeline": "./src/video/pipeline.ts",
     "./video/queue": "./src/video/queue.ts",
+    "./video/openings": "./src/video/openings.ts",
     "./video/hyperframes": "./src/video/hyperframes.ts",
     "./video/stock": "./src/video/stock.ts",
     "./video/script": "./src/video/script.ts",

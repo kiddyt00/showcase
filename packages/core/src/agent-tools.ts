@@ -56,12 +56,12 @@ export const TOOLS: ToolDef[] = [
     function: {
       name: "render_video",
       description:
-        "为当前页面渲染解说视频。engine 可选：remotion（默认，动画模板+空镜）/ hyperframes（HTML+GSAP 引擎，渲染更快体积更小）。orientation 可选 landscape（横版）或 portrait（竖版）。",
+        "为当前页面渲染解说视频。engine 可选：remotion（默认，动画模板+空镜）/ hyperframes（HTML+GSAP 引擎，完整分镜渲染更快体积更小）/ quick（⚡ 30 秒快览版，HyperFrames 专属，确定性脚本零 LLM，宣判式给结论给数字，发布后 1~2 分钟先出）。orientation 可选 landscape（横版）或 portrait（竖版）。",
       parameters: {
         type: "object",
         properties: {
           slug: { type: "string", description: "可选，目标页面 slug，默认当前页面" },
-          engine: { type: "string", description: "remotion | hyperframes，默认 remotion" },
+          engine: { type: "string", description: "remotion | hyperframes | quick，默认 remotion" },
           orientation: { type: "string", description: "landscape | portrait，默认 landscape" },
         },
       },
@@ -233,16 +233,19 @@ export async function executeTool(
     case "render_video": {
       const slug = (args.slug as string) ?? ctx.currentSlug;
       const page = requirePage(slug);
-      // remotion → standard（Remotion 动画模板）；hyperframes → hyperframes 引擎
-      const mode: VideoMode = args.engine === "hyperframes" ? "hyperframes" : "standard";
+      // remotion → standard（Remotion 动画模板）；hyperframes → hyperframes 引擎；quick → 30 秒快览（HyperFrames 专属）
+      const engine = String(args.engine ?? "remotion");
+      const mode: VideoMode =
+        engine === "hyperframes" ? "hyperframes" : engine === "quick" ? "quick" : "standard";
       const orientation = args.orientation === "portrait" ? "portrait" : "landscape";
       // 排队渲染（异步），立即返回任务状态
       const { startRender } = await import("./video/queue");
       const r = await startRender(page.slug, orientation, mode);
-      const engineName = mode === "hyperframes" ? "HyperFrames" : "Remotion";
+      const engineName = mode === "hyperframes" ? "HyperFrames" : mode === "quick" ? "⚡ 30 秒快览（HyperFrames）" : "Remotion";
+      const eta = mode === "quick" ? "约 1~2 分钟" : "约 1~8 分钟";
       const msg =
         r === "started"
-          ? `已开始渲染 ${engineName} 版${orientation === "portrait" ? "竖版" : "横版"}视频（页面 ${page.slug}），约 1~8 分钟完成，完成后自动出现在详情页。`
+          ? `已开始渲染 ${engineName} 版${orientation === "portrait" ? "竖版" : "横版"}视频（页面 ${page.slug}），${eta}完成，完成后自动出现在详情页。`
           : r === "exists"
             ? `页面 ${page.slug} 的该版本视频已在渲染中或已完成，无需重复发起。`
             : r === "busy"

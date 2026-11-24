@@ -99,6 +99,9 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
                 <Link href="/tags" className="link-editorial hover:text-accent">
                   标签
                 </Link>
+                <Link href="/weekly" className="link-editorial hover:text-accent">
+                  周印
+                </Link>
               </nav>
             </div>
           </header>

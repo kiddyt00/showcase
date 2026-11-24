@@ -148,12 +148,18 @@ async function executeJob(id: string): Promise<void> {
     }
     savePage(page);
 
-    // 自动排队解说视频渲染（横版+竖版），与原同步路径行为一致
+    // 自动排队解说视频渲染：新鲜度阶梯 quick(横) → standard(横) → standard(竖)——
+    // 发布后先出 30 秒快览（1~2 分钟，HyperFrames 确定性脚本），再补完整预告片（横/竖），与原同步路径行为一致
     void (async () => {
-      for (const o of ["landscape", "portrait"] as const) {
+      const queue: { o: "landscape" | "portrait"; m: "quick" | "standard" }[] = [
+        { o: "landscape", m: "quick" },
+        { o: "landscape", m: "standard" },
+        { o: "portrait", m: "standard" },
+      ];
+      for (const { o, m } of queue) {
         let started = false;
         for (let attempt = 0; attempt < 40 && !started; attempt++) {
-          const r = await startRender(page.slug, o);
+          const r = await startRender(page.slug, o, m);
           if (r === "started") started = true;
           else if (r === "busy") await new Promise((r2) => setTimeout(r2, 15_000));
           else break;

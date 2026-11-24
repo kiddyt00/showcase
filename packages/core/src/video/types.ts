@@ -11,8 +11,8 @@ export const DIMENSIONS: Record<Orientation, { width: number; height: number }> 
 
 export const FPS = 30;
 
-/** 视频模式：standard=Remotion 动画模板；slides=HTML 幻灯片截图；hyperframes=HTML+GSAP 组合（同分镜，另一引擎） */
-export type VideoMode = "standard" | "slides" | "hyperframes";
+/** 视频模式：standard=Remotion 动画模板；slides=HTML 幻灯片截图；hyperframes=HTML+GSAP 组合（同分镜，另一引擎）；quick=30 秒快览版（HyperFrames 专属，确定性脚本零 LLM） */
+export type VideoMode = "standard" | "slides" | "hyperframes" | "quick";
 
 /** 一个视频场景 = 一张幻灯片 + 一段配音 */
 export interface Scene {
@@ -142,5 +142,7 @@ export interface VideoJob {
   progress?: number;
   /** 渲染完成后的场景摘要（章节时间轴） */
   scenes?: SceneSummary[];
+  /** 视频模式（缺省 standard；quick/slides/hyperframes 产物与标准版不同名） */
+  mode?: VideoMode;
   createdAt: string;
 }

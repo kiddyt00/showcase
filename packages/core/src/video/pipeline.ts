@@ -8,7 +8,7 @@ import fs from "node:fs/promises";
 import { bundle } from "@remotion/bundler";
 import { renderMedia, selectComposition } from "@remotion/renderer";
 import { getPage } from "../store";
-import { generateScript, generateSlidesScript } from "./script";
+import { generateScript, generateSlidesScript, generateDigestScript } from "./script";
 import { generateSlides } from "./slides";
 import { synthesizeWithTimeline, WordTimestamp } from "./tts";
 import { fetchStockVideo, fetchStockPhoto, fetchStockPhotoRel, findBgmFile } from "./stock";
@@ -49,7 +49,11 @@ export async function renderVideo(
 
   const spec = await buildSpec(page, orientation, mode);
   const outName =
-    mode === "slides" ? `${slug}-${orientation}-slides.mp4` : `${slug}-${orientation}.mp4`;
+    mode === "slides"
+      ? `${slug}-${orientation}-slides.mp4`
+      : mode === "quick"
+        ? `${slug}-${orientation}-quick.mp4`
+        : `${slug}-${orientation}.mp4`;
   const outPath = path.join(VIDEO_DIR, outName);
   await fs.mkdir(VIDEO_DIR, { recursive: true });
 
@@ -135,14 +139,19 @@ function getServeUrl(entry: string): Promise<string> {
   return p;
 }
 
-/** 组装视频规格：脚本 + 配音 + 时长（slides 模式画面 = 幻灯片截图，与场景一一对应）。HyperFrames 管线复用 */
+/** 组装视频规格：脚本 + 配音 + 时长。slides 模式画面 = 幻灯片截图；quick 模式走确定性 30 秒快览脚本。HyperFrames 管线复用 */
 export async function buildSpec(
   page: NonNullable<Awaited<ReturnType<typeof getPage>>>,
   orientation: Orientation,
   mode: VideoMode = "standard"
 ): Promise<VideoJobSpec> {
   const isSlides = mode === "slides";
-  const script = isSlides ? generateSlidesScript(page) : await generateScript(page);
+  const isQuick = mode === "quick";
+  const script = isSlides
+    ? generateSlidesScript(page)
+    : isQuick
+      ? generateDigestScript(page) // 快览版：确定性脚本零 LLM，storyboard 已在脚本层构造
+      : await generateScript(page);
   // 幻灯片模式：先产出全部 PNG（chrome 截图），场景 i ↔ slide-{i}.png；单页失败时该场景回退默认布局
   const slideFiles = isSlides ? (await generateSlides(page, orientation)).slideFiles : [];
   const assetDirRel = `videos/${page.slug}-assets/${orientation}`; // public 相对路径
@@ -241,33 +250,49 @@ export async function buildSpec(
     let audioFileRel = "";
     let durationFrames: number;
     let timeline: WordTimestamp[] = [];
-    try {
-      const { durationSec } = await synthesizeWithTimeline(s.narration, audioFile, timelineFile);
-      audioFileRel = `${assetDirRel}/scene-${i}.mp3`;
-      // 词级时间戳挂到 Scene：渲染端逐词高亮字幕 + 模板节拍对齐
+    // quick 快览模式：时长按旁白字数确定性计算（脚本层已给出 durationFrames），跳过 TTS（可选音轨不阻塞产物）
+    const scriptedFrames = isQuick ? s.durationFrames : undefined;
+    if (!isQuick) {
       try {
-        timeline = JSON.parse(await fs.readFile(timelineFile, "utf8")) as WordTimestamp[];
-        if (!Array.isArray(timeline)) timeline = [];
-      } catch {
-        timeline = [];
+        const { durationSec } = await synthesizeWithTimeline(s.narration, audioFile, timelineFile);
+        audioFileRel = `${assetDirRel}/scene-${i}.mp3`;
+        // 词级时间戳挂到 Scene：渲染端逐词高亮字幕 + 模板节拍对齐
+        try {
+          timeline = JSON.parse(await fs.readFile(timelineFile, "utf8")) as WordTimestamp[];
+          if (!Array.isArray(timeline)) timeline = [];
+        } catch {
+          timeline = [];
+        }
+        durationFrames = Math.min(
+          MAX_SCENE_SECONDS * FPS,
+          Math.max(60, Math.ceil(durationSec * FPS))
+        );
+      } catch (err) {
+        // TTS 失败降级：该场景静音兜底，不生成音频文件。
+        // 时长按中文口播语速估算：约 4 字/秒，再加 1 秒呼吸空间。
+        const len = s.narration.replace(/\s/g, "").length;
+        const estSec = Math.ceil(len / 4) + 1;
+        durationFrames = Math.min(
+          MAX_SCENE_SECONDS * FPS,
+          Math.max(60, Math.ceil(estSec * FPS))
+        );
+        console.warn(
+          `[video] TTS 合成失败，场景 ${i} 使用静音降级（估算 ${estSec}s）:`,
+          err instanceof Error ? err.message : err
+        );
       }
-      durationFrames = Math.min(
-        MAX_SCENE_SECONDS * FPS,
-        Math.max(60, Math.ceil(durationSec * FPS))
-      );
-    } catch (err) {
-      // TTS 失败降级：该场景静音兜底，不生成音频文件。
-      // 时长按中文口播语速估算：约 4 字/秒，再加 1 秒呼吸空间。
-      const len = s.narration.replace(/\s/g, "").length;
-      const estSec = Math.ceil(len / 4) + 1;
-      durationFrames = Math.min(
-        MAX_SCENE_SECONDS * FPS,
-        Math.max(60, Math.ceil(estSec * FPS))
-      );
-      console.warn(
-        `[video] TTS 合成失败，场景 ${i} 使用静音降级（估算 ${estSec}s）:`,
-        err instanceof Error ? err.message : err
-      );
+    } else {
+      // 旁白音频仍尽力合成：成功则配音，失败不阻塞（快览版以画面宣判为主）
+      try {
+        await synthesizeWithTimeline(s.narration, audioFile, timelineFile);
+        audioFileRel = `${assetDirRel}/scene-${i}.mp3`;
+      } catch (err) {
+        console.warn(
+          `[video] 快览版 TTS 合成失败，场景 ${i} 静音:`,
+          err instanceof Error ? err.message : err
+        );
+      }
+      durationFrames = Math.max(60, scriptedFrames ?? Math.ceil(s.narration.replace(/\s/g, "").length / 4 + 1) * FPS);
     }
     scenes.push({
       heading: s.keyword || s.heading || "untitled",
@@ -280,27 +305,31 @@ export async function buildSpec(
       hookScene: s.hookScene,
       // 词级时间戳 + 动画模板声明（visual/beats 由脚本层产出，模板组件消费）
       ...(timeline.length ? { timeline } : {}),
-      ...(isSlides ? { visual: "slide" as const } : s.visual && s.visual !== "text" ? { visual: s.visual } : {}),
+      ...(isSlides
+        ? { visual: "slide" as const }
+        : s.visual && s.visual !== "text"
+          ? { visual: s.visual }
+          : {}),
       ...(s.beats?.length ? { beats: s.beats } : {}),
-      // v5 分镜：LLM 设计的原语组合，存在时渲染端走 StoryboardRenderer
+      // v5 分镜：LLM 设计的原语组合，存在时渲染端走 StoryboardRenderer（quick 快览分镜由脚本层确定性构造）
       ...(s.storyboard ? { storyboard: s.storyboard } : {}),
       // 幻灯片模式：场景 i ↔ slide-{i}.png（截图缺失的场景无 slideFile → 渲染端回退默认布局）
       ...(isSlides && slideFiles[i] ? { slideFile: slideFiles[i] } : {}),
-      // LLM visual 声明 + 实际素材 → 动画视频 / 静态图 / 打字机代码 / 数字滚动 / 纯文字
-      ...(!isSlides ? await resolveVisual(s) : {}),
+      // LLM visual 声明 + 实际素材 → 动画视频 / 静态图 / 打字机代码 / 数字滚动 / 纯文字（quick 场景自带 storyboard，跳过）
+      ...(!isSlides && !isQuick ? await resolveVisual(s) : {}),
     });
 
     // 免费空镜/图片补充（Pexels，免费可商用）：
     // - 开场场景：全屏空镜做标题背景（电影感）
     // - 中间纯文字场景（无图表/代码/数字/模板）：空镜视频替代，图片降级
-    // 限量 MAX_STOCK_SCENES 防刷；跳过幻灯片模式与模板场景
+    // 限量 MAX_STOCK_SCENES 防刷；跳过幻灯片模式、quick 快览模式（digest 分镜自带背景）与模板场景
     const last = scenes[scenes.length - 1];
     const isIntroScene = i === 0;
     const isEndCard = i === script.length - 1;
     const hasTemplate = !!last.visual; // flowpath/terminal/compare 等动效模板场景不用空镜
     const midCandidate =
       !last.videoFile && !last.imageFile && !last.code && !last.counter && !hasTemplate;
-    if (!isSlides && stockUsed < MAX_STOCK_SCENES && (isIntroScene || (midCandidate && !isEndCard))) {
+    if (!isSlides && !isQuick && stockUsed < MAX_STOCK_SCENES && (isIntroScene || (midCandidate && !isEndCard))) {
       stockUsed++;
       const query = stockQuery(s) || page.tags[0] || page.title.slice(0, 30);
       const seconds = durationFrames / FPS;
@@ -323,9 +352,9 @@ export async function buildSpec(
     }
   }
 
-  // 图标本地化：下载外部图标到资产目录，渲染时不依赖外网（失败则放弃图标）
+  // 图标本地化：下载外部图标到资产目录，渲染时不依赖外网（失败则放弃图标；quick 快览分镜不使用图标，跳过下载）
   let icon = page.icon;
-  if (icon && /^https?:\/\//.test(icon)) {
+  if (icon && /^https?:\/\//.test(icon) && !isQuick) {
     try {
       const res = await fetch(icon, { signal: AbortSignal.timeout(10000) });
       if (res.ok) {

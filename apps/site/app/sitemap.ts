@@ -9,6 +9,7 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
   const pages = listPageSummaries(500);
   return [
     { url: base, changeFrequency: "daily", priority: 1 },
+    { url: `${base}/weekly`, changeFrequency: "weekly", priority: 0.9 },
     ...pages.map((p) => ({
       url: `${base}/show/${p.slug}`,
       lastModified: new Date(p.createdAt),

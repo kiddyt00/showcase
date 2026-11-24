@@ -67,8 +67,9 @@ export async function startRender(
 ): Promise<StartRenderResult> {
   sweepStaleRenderingJobs();
   const existing = getVideoJob(slug, orientation);
-  // 幂等：渲染中或已完成直接返回（slides/hyperframes 产物与标准版不同名，done 不拦截以便补产）
-  if (existing && (existing.status === "rendering" || (existing.status === "done" && mode === "standard"))) {
+  // 幂等按 (slug, orientation, mode) 判断：quick/slides/hyperframes 产物与标准版不同名，
+  // 行内记录最近一次任务的 mode——done 且 mode 相同才拦截，否则允许补产其他版本
+  if (existing && (existing.status === "rendering" || (existing.status === "done" && (existing.mode ?? "standard") === mode))) {
     return "exists";
   }
   if (!getPage(slug)) return "not-found";
@@ -79,13 +80,15 @@ export async function startRender(
     orientation,
     status: "rendering" as const,
     progress: 0,
+    mode,
     createdAt: new Date().toISOString(),
   };
   upsertVideoJob(job);
   const renderStartedMs = Date.now(); // 渲染耗时起点（两种引擎路径共用）
+  // quick（30 秒快览）是 HyperFrames 引擎专属：确定性脚本自带分镜，走 buildSpec(page, orientation, "quick")
   const pipeline =
-    mode === "hyperframes"
-      ? renderVideoHyperframes(slug, orientation, (p) => setVideoJobProgress(slug, orientation, p))
+    mode === "hyperframes" || mode === "quick"
+      ? renderVideoHyperframes(slug, orientation, (p) => setVideoJobProgress(slug, orientation, p), mode)
       : renderVideo(slug, orientation, (percent) => setVideoJobProgress(slug, orientation, percent), mode);
   pipeline
     .then(({ path, scenes }) => {

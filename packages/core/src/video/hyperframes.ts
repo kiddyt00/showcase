@@ -300,7 +300,11 @@ export function composeHyperframesHtml(spec: VideoJobSpec): { html: string; tota
     }
 
     sceneBlocks.push(
-      `  <div id="scene-${i}" class="scene clip" data-start="${start.toFixed(2)}" data-duration="${dur.toFixed(2)}" data-track-index="0" style="background:${bgCss}">\n${layersHtml}\n  </div>\n  <audio id="audio-${i}" class="clip" data-start="${start.toFixed(2)}" data-duration="${dur.toFixed(2)}" data-track-index="${10 + i}" src="${path.basename(s.audioFile)}"></audio>`
+      `  <div id="scene-${i}" class="scene clip" data-start="${start.toFixed(2)}" data-duration="${dur.toFixed(2)}" data-track-index="0" style="background:${bgCss}">\n${layersHtml}\n  </div>` +
+      // 音频文件缺失（TTS 失败/静音场景）时不写 audio 层，避免 HyperFrames 加载空 src 挂掉
+      (path.basename(s.audioFile)
+        ? `\n  <audio id="audio-${i}" class="clip" data-start="${start.toFixed(2)}" data-duration="${dur.toFixed(2)}" data-track-index="${10 + i}" src="${path.basename(s.audioFile)}"></audio>`
+        : "")
     );
     animBlocks.push(layersAnim);
   }
@@ -380,19 +384,19 @@ ${animBlocks.join("\n")}
   return { html, totalSec: TOTAL };
 }
 
-/** 渲染 HyperFrames 版视频：spec → 项目目录 → CLI render */
+/** 渲染 HyperFrames 版视频：spec → 项目目录 → CLI render。mode="quick" 走确定性 30 秒快览脚本，产物 {slug}-{orientation}-quick.mp4 */
 export async function renderVideoHyperframes(
   slug: string,
   orientation: Orientation,
   onProgress?: (percent: number) => void,
-  _mode: VideoMode = "hyperframes"
+  mode: VideoMode = "hyperframes"
 ): Promise<{ path: string; scenes: Array<{ heading: string; seconds: number }> }> {
   const page = await getPage(slug);
   if (!page) throw new Error(`页面 ${slug} 不存在`);
 
   onProgress?.(3);
-  // 复用 Remotion 管线的 buildSpec（脚本/TTS/素材全部一致）
-  const spec = await buildSpec(page, orientation, "standard");
+  // 复用 Remotion 管线的 buildSpec（脚本/TTS/素材全部一致）；quick 模式换确定性快览脚本并跳过空镜/图表场景
+  const spec = await buildSpec(page, orientation, mode === "quick" ? "quick" : "standard");
   onProgress?.(12);
 
   const projectDir = path.join(PUBLIC_ASSETS_DIR, "videos", `${slug}-hf`);
@@ -416,7 +420,7 @@ export async function renderVideoHyperframes(
   }
   onProgress?.(25);
 
-  const outName = `${slug}-${orientation}-hf.mp4`;
+  const outName = mode === "quick" ? `${slug}-${orientation}-quick.mp4` : `${slug}-${orientation}-hf.mp4`;
   const outPath = path.join(VIDEO_DIR, outName);
   const timeoutMs = 20 * 60_000;
   const bin = hfBin();
