@@ -54,6 +54,19 @@ export default async function ShowPage({
       <ReadingProgress />
       <PageView page={page} />
       <VideoSection slug={page.slug} />
+      {/* Agent 编辑深链：配置了 NEXT_PUBLIC_AGENT_URL 才出现（公开 standalone 部署不渲染） */}
+      {process.env.NEXT_PUBLIC_AGENT_URL ? (
+        <p className="mx-auto max-w-3xl px-4 pb-10 text-right">
+          <a
+            href={`${process.env.NEXT_PUBLIC_AGENT_URL}/chat?slug=${page.slug}`}
+            className="link-editorial text-xs text-muted"
+            target="_blank"
+            rel="noreferrer"
+          >
+            在 Agent 工作台中编辑此页 ↗
+          </a>
+        </p>
+      ) : null}
     </>
   );
 }

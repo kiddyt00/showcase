@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import { connection } from "next/server";
 import { listPageSummaries } from "@showcase/core/store";
 import Link from "next/link";
 
@@ -7,7 +8,8 @@ export const instant = false;
 export const metadata: Metadata = { title: "标签云" };
 
 /** 标签云：按出现次数定字号（editorial 浅色，低调） */
-export default function TagsPage() {
+export default async function TagsPage() {
+  await connection(); // 请求时渲染，避免构建时空库被预渲染成永久空页
   const counts = new Map<string, number>();
   for (const p of listPageSummaries(500)) {
     for (const t of p.tags) counts.set(t, (counts.get(t) ?? 0) + 1);

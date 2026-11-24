@@ -11,6 +11,7 @@ import { getPage } from "../store";
 import { generateScript, generateSlidesScript } from "./script";
 import { generateSlides } from "./slides";
 import { synthesizeWithTimeline, WordTimestamp } from "./tts";
+import { fetchStockVideo, fetchStockPhoto, fetchStockPhotoRel, findBgmFile } from "./stock";
 import { DIMENSIONS, FPS, Orientation, Scene, SceneSummary, VideoJobSpec, VideoMode } from "./types";
 import { CORE_ROOT, PUBLIC_ASSETS_DIR } from "../paths";
 import type { Diagram, Section } from "../types";
@@ -20,6 +21,15 @@ export const VIDEO_DIR = path.join(PUBLIC_ASSETS_DIR, "videos");
 
 /** 场景时长硬上限（秒）：脚本层超长 narration 已截断，这里再兜底 */
 const MAX_SCENE_SECONDS = 22;
+
+/** 单条视频最多使用的空镜/图片素材数（控制 Pexels API 调用量与下载时间） */
+const MAX_STOCK_SCENES = 5;
+
+/** 空镜搜索词清洗：去掉英文虚词，避免 Pexels 搜出无关结果 */
+function stockQuery(s: { keyword?: string; heading?: string }): string {
+  const raw = (s.keyword || s.heading || "").trim();
+  return raw.replace(/[，。、！？:："'（）()]/g, " ").slice(0, 40);
+}
 
 export interface RenderVideoResult {
   path: string;
@@ -45,6 +55,23 @@ export async function renderVideo(
 
   const entry = path.join(CORE_ROOT, "remotion", "entry.tsx");
   const serveUrl = await getServeUrl(entry);
+
+  // bundle 的 publicDir 是打包时快照：本次渲染新下载的资产（stock/音频/图标）不在其中。
+  // 渲染前把本页资产目录同步进 bundle 的 public/videos/{slug}-assets，OffthreadVideo/Img 才能取到。
+  try {
+    const bundlePublic = path.join(serveUrl, "public");
+    const assetSrc = path.join(PUBLIC_ASSETS_DIR, "videos", `${slug}-assets`);
+    const assetDest = path.join(bundlePublic, "videos", `${slug}-assets`);
+    await fs.mkdir(path.dirname(assetDest), { recursive: true });
+    await fs.cp(assetSrc, assetDest, { recursive: true, force: true });
+    // bgm 同步
+    const bgmSrc = path.join(PUBLIC_ASSETS_DIR, "videos", "bgm.mp3");
+    if (await fs.stat(bgmSrc).then(() => true).catch(() => false)) {
+      await fs.cp(bgmSrc, path.join(bundlePublic, "videos", "bgm.mp3"), { force: true });
+    }
+  } catch (err) {
+    console.warn(`[video] 资产同步进 bundle 失败（可能影响画面素材）: ${err instanceof Error ? err.message : err}`);
+  }
 
   const composition = await selectComposition({
     serveUrl,
@@ -108,8 +135,8 @@ function getServeUrl(entry: string): Promise<string> {
   return p;
 }
 
-/** 组装视频规格：脚本 + 配音 + 时长（slides 模式画面 = 幻灯片截图，与场景一一对应） */
-async function buildSpec(
+/** 组装视频规格：脚本 + 配音 + 时长（slides 模式画面 = 幻灯片截图，与场景一一对应）。HyperFrames 管线复用 */
+export async function buildSpec(
   page: NonNullable<Awaited<ReturnType<typeof getPage>>>,
   orientation: Orientation,
   mode: VideoMode = "standard"
@@ -206,6 +233,7 @@ async function buildSpec(
   }
 
   const scenes: Scene[] = [];
+  let stockUsed = 0;
   for (let i = 0; i < script.length; i++) {
     const s = script[i];
     const audioFile = path.join(assetDir, `scene-${i}.mp3`);
@@ -254,11 +282,45 @@ async function buildSpec(
       ...(timeline.length ? { timeline } : {}),
       ...(isSlides ? { visual: "slide" as const } : s.visual && s.visual !== "text" ? { visual: s.visual } : {}),
       ...(s.beats?.length ? { beats: s.beats } : {}),
+      // v5 分镜：LLM 设计的原语组合，存在时渲染端走 StoryboardRenderer
+      ...(s.storyboard ? { storyboard: s.storyboard } : {}),
       // 幻灯片模式：场景 i ↔ slide-{i}.png（截图缺失的场景无 slideFile → 渲染端回退默认布局）
       ...(isSlides && slideFiles[i] ? { slideFile: slideFiles[i] } : {}),
       // LLM visual 声明 + 实际素材 → 动画视频 / 静态图 / 打字机代码 / 数字滚动 / 纯文字
       ...(!isSlides ? await resolveVisual(s) : {}),
     });
+
+    // 免费空镜/图片补充（Pexels，免费可商用）：
+    // - 开场场景：全屏空镜做标题背景（电影感）
+    // - 中间纯文字场景（无图表/代码/数字/模板）：空镜视频替代，图片降级
+    // 限量 MAX_STOCK_SCENES 防刷；跳过幻灯片模式与模板场景
+    const last = scenes[scenes.length - 1];
+    const isIntroScene = i === 0;
+    const isEndCard = i === script.length - 1;
+    const hasTemplate = !!last.visual; // flowpath/terminal/compare 等动效模板场景不用空镜
+    const midCandidate =
+      !last.videoFile && !last.imageFile && !last.code && !last.counter && !hasTemplate;
+    if (!isSlides && stockUsed < MAX_STOCK_SCENES && (isIntroScene || (midCandidate && !isEndCard))) {
+      stockUsed++;
+      const query = stockQuery(s) || page.tags[0] || page.title.slice(0, 30);
+      const seconds = durationFrames / FPS;
+      const stockRel = `videos/${page.slug}-assets/${orientation}/stock-${i}`;
+      const clip =
+        (await fetchStockVideo({
+          query,
+          orientation,
+          minDurationSec: seconds,
+          destRel: `${stockRel}.mp4`,
+        })) ??
+        (await fetchStockPhoto({ query, orientation, destRel: `${stockRel}.jpg` }));
+      if (clip?.endsWith(".mp4")) {
+        last.videoFile = clip;
+        console.warn(`[stock] 场景 ${i}「${query}」使用空镜视频 ${clip}`);
+      } else if (clip) {
+        last.imageFile = clip;
+        console.warn(`[stock] 场景 ${i}「${query}」使用图片素材 ${clip}`);
+      }
+    }
   }
 
   // 图标本地化：下载外部图标到资产目录，渲染时不依赖外网（失败则放弃图标）
@@ -280,6 +342,29 @@ async function buildSpec(
     }
   }
 
+  // 分镜 photo/clip 层：LLM 只写搜索意图（query），管线真实下载后回填 src
+  for (const scene of scenes) {
+    const layers = scene.storyboard?.layers;
+    if (!layers) continue;
+    for (const l of layers) {
+      if ((l.type === "photo" || l.type === "clip") && !("src" in l && l.src)) {
+        const q = (l as { query: string }).query;
+        const rel = `videos/${page.slug}-assets/${orientation}/media-${layers.indexOf(l)}.`;
+        const src =
+          l.type === "clip"
+            ? await fetchStockVideo({ query: q, orientation, minDurationSec: 5, destRel: `${rel}mp4` })
+            : (await fetchStockPhotoRel(q, orientation, `${rel}jpg`)) ??
+              (await fetchStockVideo({ query: q, orientation, minDurationSec: 5, destRel: `${rel}mp4` }));
+        if (src) (l as { src?: string }).src = src;
+        console.warn(`[stock] 分镜 ${l.type}「${q}」${src ? "素材已下载 " + src : "未找到素材，层已移除"}`);
+      }
+    }
+    // 未解析到素材的 photo/clip 层剔除（渲染端无 src 会挂）
+    scene.storyboard!.layers = layers.filter(
+      (l) => !(l.type === "photo" || l.type === "clip") || ("src" in l && !!l.src)
+    );
+  }
+
   return {
     slug: page.slug,
     orientation,
@@ -287,6 +372,8 @@ async function buildSpec(
     icon,
     tags: page.tags,
     scenes,
+    // 免费背景音乐：用户放置 public/videos/bgm.mp3 即自动混入（低音量循环）
+    bgmFile: findBgmFile(),
   };
 }
 

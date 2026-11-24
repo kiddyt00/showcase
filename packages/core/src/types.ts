@@ -15,6 +15,12 @@ export interface Section {
   bullets?: string[];
   /** 可选：代码块（部署命令等） */
   code?: { language: string; content: string };
+  /** 可选：章节配图（管线按 imageQuery 从 Pexels 下载后填充），本地路径如 videos/{slug}-assets/img-{i}.jpg */
+  image?: string;
+  /** 可选：配图说明（渲染为图注） */
+  imageCaption?: string;
+  /** 分析输入：英文图片搜索词（管线下载后转成 image 字段，不落库） */
+  imageQuery?: string;
 }
 
 /** 一张图表：spec 存 SeeCode JSON，htmlUrl 为交互式 HTML（iframe 嵌入），svgUrl 为静态 SVG（视频用）；渲染失败时均缺省 */

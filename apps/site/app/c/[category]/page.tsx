@@ -1,3 +1,4 @@
+import { connection } from "next/server";
 import { listPageSummaries } from "@showcase/core/store";
 import Link from "next/link";
 import type { Metadata } from "next";
@@ -23,6 +24,7 @@ export default async function CategoryPage({
 }) {
   const { category: raw } = await params;
   const category = /%/.test(raw) ? decodeURIComponent(raw) : raw;
+  await connection(); // 请求时渲染，保证新发布内容实时可见
   const collections = getCollections();
   const collection = collections.find((c) => c.id === category);
   const pages = listPageSummaries(100).filter((p) => p.category === category);

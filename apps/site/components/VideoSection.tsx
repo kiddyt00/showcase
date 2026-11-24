@@ -5,7 +5,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 
 type Orientation = "landscape" | "portrait";
 type Status = "pending" | "rendering" | "done" | "failed" | undefined;
-type VideoMode = "standard" | "slides";
+type VideoMode = "standard" | "slides" | "hf";
 
 /** 章节摘要（来自 /api/video 的 scenes 字段） */
 interface SceneSummary {
@@ -16,12 +16,13 @@ interface SceneSummary {
 const MAX_POLL_FAILURES = 5;
 const PLAYBACK_RATES = [1, 1.25, 1.5, 2];
 
-/** done 状态播放器：章节时间轴 + 倍速 + 键盘 ←/→ ±5s；slidesAvail 时可切换图文幻灯片版产物 */
-function VideoPlayer({ slug, orientation, scenes, slidesAvail, variant, onVariant }: {
+/** done 状态播放器：章节时间轴 + 倍速 + 键盘 ←/→ ±5s；可切换 幻灯片版 / HyperFrames 版 产物 */
+function VideoPlayer({ slug, orientation, scenes, slidesAvail, hfAvail, variant, onVariant }: {
   slug: string;
   orientation: Orientation;
   scenes: SceneSummary[];
   slidesAvail: boolean;
+  hfAvail: boolean;
   variant: VideoMode;
   onVariant: (v: VideoMode) => void;
 }) {
@@ -99,15 +100,20 @@ function VideoPlayer({ slug, orientation, scenes, slidesAvail, variant, onVarian
         ref={videoRef}
         controls
         className="w-full rounded-lg"
-        src={variant === "slides" ? `/videos/${slug}-${orientation}-slides.mp4` : `/videos/${slug}-${orientation}.mp4`}
+        src={variant === "slides"
+          ? `/videos/${slug}-${orientation}-slides.mp4`
+          : variant === "hf"
+            ? `/videos/${slug}-${orientation}-hf.mp4`
+            : `/videos/${slug}-${orientation}.mp4`}
         onTimeUpdate={(e) => setCurrent(e.currentTarget.currentTime)}
       />
-      {slidesAvail && (
+      {(slidesAvail || hfAvail) && (
         <div className="mt-2 flex gap-1">
           {([
-            { v: "standard" as VideoMode, label: "标准版" },
-            { v: "slides" as VideoMode, label: "🎬 图文幻灯片版" },
-          ]).map(({ v, label }) => (
+            { v: "standard" as VideoMode, label: "标准版", show: true },
+            { v: "slides" as VideoMode, label: "🎬 幻灯片版", show: slidesAvail },
+            { v: "hf" as VideoMode, label: "⚡ HyperFrames 版", show: hfAvail },
+          ]).filter((x) => x.show).map(({ v, label }) => (
             <button
               key={v}
               onClick={() => onVariant(v)}
@@ -164,16 +170,23 @@ export default function VideoSection({ slug }: { slug: string }) {
   const [slidesAvail, setSlidesAvail] = useState<Record<Orientation, boolean>>(
     { landscape: false, portrait: false }
   );
+  // HyperFrames 引擎版产物（{slug}-{orientation}-hf.mp4）
+  const [hfAvail, setHfAvail] = useState<Record<Orientation, boolean>>(
+    { landscape: false, portrait: false }
+  );
   const [variant, setVariant] = useState<Record<Orientation, VideoMode>>(
     { landscape: "standard", portrait: "standard" }
   );
 
-  // 探测 slides 产物是否存在（挂载时 + 任务状态变化后）
+  // 探测 slides / hyperframes 产物是否存在（挂载时 + 任务状态变化后）
   useEffect(() => {
     for (const o of ["landscape", "portrait"] as Orientation[]) {
       fetch(`/videos/${slug}-${o}-slides.mp4`, { method: "HEAD" })
         .then((r) => setSlidesAvail((s) => ({ ...s, [o]: r.ok })))
         .catch(() => setSlidesAvail((s) => ({ ...s, [o]: false })));
+      fetch(`/videos/${slug}-${o}-hf.mp4`, { method: "HEAD" })
+        .then((r) => setHfAvail((s) => ({ ...s, [o]: r.ok })))
+        .catch(() => setHfAvail((s) => ({ ...s, [o]: false })));
     }
   }, [slug, jobs]);
 
@@ -304,9 +317,10 @@ export default function VideoSection({ slug }: { slug: string }) {
                   slug={slug}
                   orientation={o}
                   scenes={scenes[o]}
-                  slidesAvail={slidesAvail[o]}
                   variant={variant[o]}
                   onVariant={(v) => setVariant((s) => ({ ...s, [o]: v }))}
+                  slidesAvail={slidesAvail[o]}
+                  hfAvail={hfAvail[o]}
                 />
               ) : job?.status === "rendering" ? (
                 <div className="py-4">

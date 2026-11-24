@@ -24,7 +24,7 @@
   --color-border: var(--border);
   --color-accent: var(--accent);
   --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-mono), ui-monospace, SFMono-Regular, Menlo, monospace;
+  --font-sans: var(--font-geist-sans), ui-sans-serif, system-ui, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
   --font-mono: var(--font-geist-mono), ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
   --radius-theme: 0.375rem;
 }
@@ -36,7 +36,8 @@ html {
 body {
   background: var(--background);
   color: var(--foreground);
-  font-family: var(--font-geist-mono), ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  /* 界面正文用无衬线；等宽字体只留给 id/slug/数字/日志等元数据（font-mono） */
+  font-family: var(--font-geist-sans), ui-sans-serif, system-ui, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
   font-size: 13px;
 }
 
@@ -53,7 +54,7 @@ body {
   outline: none;
 }
 .input::placeholder {
-  color: #4d5668;
+  color: #7a8698;
 }
 .input:focus {
   border-color: var(--accent);
@@ -106,6 +107,86 @@ body {
 :focus-visible {
   outline: 2px solid var(--accent);
   outline-offset: 2px;
+}
+
+/* ==================== 动效升级（克制：入口动效 + 微交互，无循环装饰） ==================== */
+
+/* 消息入场：fade + rise，一次性（stagger 由内联 --stagger-delay 驱动） */
+@keyframes msg-in {
+  from {
+    opacity: 0;
+    transform: translateY(8px) scale(0.995);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+.msg-in {
+  animation: msg-in 320ms cubic-bezier(0.22, 1, 0.36, 1) both;
+  animation-delay: var(--stagger-delay, 0ms);
+}
+
+/* 任务卡 Spring 入场（轻微过冲模拟 spring） */
+@keyframes card-spring-in {
+  0% {
+    opacity: 0;
+    transform: translateY(14px) scale(0.97);
+  }
+  62% {
+    opacity: 1;
+    transform: translateY(-2px) scale(1.008);
+  }
+  100% {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+.card-spring {
+  animation: card-spring-in 520ms cubic-bezier(0.3, 0.9, 0.35, 1.12) both;
+}
+
+/* 打字机光标：AI 生成中占位 */
+@keyframes caret-blink {
+  0%, 45% { opacity: 1; }
+  50%, 95% { opacity: 0; }
+}
+.typewriter-caret {
+  display: inline-block;
+  width: 2px;
+  height: 1em;
+  margin-left: 2px;
+  vertical-align: text-bottom;
+  background: var(--accent);
+  animation: caret-blink 1s steps(1) infinite;
+}
+
+/* Magnetic 发送按钮：--mgx/--mgy 由组件写入 */
+.magnetic {
+  transition: transform 260ms cubic-bezier(0.22, 1, 0.36, 1), background-color 150ms ease;
+  transform: translate(var(--mgx, 0px), var(--mgy, 0px));
+  will-change: transform;
+}
+
+/* 消息气泡区分：assistant 淡 accent 左线 */
+.assistant-rail {
+  box-shadow: inset 2px 0 0 0 rgb(52 211 153 / 0.35);
+}
+
+/* reduced-motion：全部新动效退化 */
+@media (prefers-reduced-motion: reduce) {
+  .msg-in,
+  .card-spring {
+    animation: none;
+  }
+  .typewriter-caret {
+    animation: none;
+    opacity: 1;
+  }
+  .magnetic {
+    transform: none !important;
+    transition: none;
+  }
 }
 
 /* 交互过渡统一：150ms，仅颜色类属性 */

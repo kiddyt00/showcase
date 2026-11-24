@@ -1,0 +1,216 @@
+<!doctype html>
+<html lang="zh">
+<head>
+<meta charset="utf-8" />
+<title>NVIDIA 财报 · HyperFrames 版</title>
+<script src="https://cdn.jsdelivr.net/npm/gsap@3.12.5/dist/gsap.min.js"></script>
+<style>
+  * { margin:0; padding:0; box-sizing:border-box; }
+  html, body { width:1920px; height:1080px; overflow:hidden; background:#0b0f0e; }
+  body { font-family: "Segoe UI", system-ui, sans-serif; }
+  #stage { position:relative; width:1920px; height:1080px; overflow:hidden; }
+  .scene { position:absolute; inset:0; display:flex; flex-direction:column; justify-content:center; padding:86px 150px; gap:34px; }
+  .layer { position:relative; }
+
+  .text { line-height:1.12; letter-spacing:-0.01em; }
+  .text.center { align-self:center; }
+
+  .metric { display:flex; flex-direction:column; align-items:center; gap:16px; }
+  .metric-value { font-size:168px; font-weight:900; color:#10b981; line-height:1; font-variant-numeric:tabular-nums; letter-spacing:-0.02em; }
+  .metric-value .pre { font-size:96px; }
+  .metric-value .suf { font-size:80px; margin-left:6px; }
+  .metric-label { font-size:32px; color:#a1a1aa; }
+
+  .stats { display:grid; gap:26px; width:100%; }
+  .stat { background:#10161f; border:1px solid rgba(255,255,255,0.09); border-radius:26px; padding:34px 40px; }
+  .stat-label { font-size:28px; color:#a1a1aa; }
+  .stat-value { font-size:72px; font-weight:900; color:#f4f4f5; margin-top:8px; font-variant-numeric:tabular-nums; }
+  .stat-delta { font-size:28px; color:#10b981; font-weight:700; margin-top:6px; }
+
+  .ring-wrap { display:flex; align-items:center; gap:50px; }
+  .ring-text { font-size:96px; font-weight:900; fill:#f4f4f5; font-family:sans-serif; }
+  .ring-label { font-size:40px; color:#a1a1aa; max-width:520px; line-height:1.4; }
+
+  .quote { padding:0 60px; }
+  .quote-mark { position:absolute; top:-90px; left:0; font-family:Georgia,serif; font-size:210px; color:rgba(16,185,129,0.18); line-height:1; }
+  .quote-text { font-size:58px; font-weight:800; color:#f4f4f5; line-height:1.5; }
+  .quote-author { margin-top:30px; display:flex; align-items:center; gap:18px; font-size:30px; color:#a1a1aa; }
+  .quote-rule { display:inline-block; width:86px; height:5px; background:#10b981; border-radius:3px; }
+
+  .timeline { position:relative; padding:30px 0; }
+  .tl-line { position:absolute; top:74px; left:0; width:100%; height:6px; background:linear-gradient(90deg, rgba(16,185,129,0.15), rgba(16,185,129,0.75)); border-radius:3px; }
+  .tl-row { display:flex; justify-content:space-between; position:relative; }
+  .tl-step { display:flex; flex-direction:column; align-items:center; gap:18px; }
+  .tl-dot { width:74px; height:74px; border-radius:50%; background:#161d28; border:4px solid rgba(16,185,129,0.55); color:#10b981;
+           display:flex; align-items:center; justify-content:center; font-size:30px; font-weight:800; }
+  .tl-step:last-child .tl-dot { background:#10b981; border-color:#10b981; color:#022c22; box-shadow:0 0 40px rgba(16,185,129,0.55); }
+  .tl-name { font-size:30px; font-weight:700; color:#a1a1aa; text-align:center; max-width:230px; }
+
+  .card { background:#161d28; border:1px solid rgba(255,255,255,0.09); border-radius:26px; padding:36px 44px;
+          background-image:linear-gradient(110deg, transparent 30%, rgba(16,185,129,0.22) 50%, transparent 70%);
+          background-size:220% 100%; background-position:-140% 0; }
+  .card.accent { background-color:rgba(16,185,129,0.10); border-color:rgba(16,185,129,0.45); }
+  .card-title { font-size:50px; font-weight:900; color:#10b981; }
+  .card-body { font-size:26px; color:#a1a1aa; margin-top:10px; }
+
+  .compare { display:flex; flex-direction:column; gap:26px; width:100%; }
+  .cmp-row { display:flex; align-items:center; gap:26px; }
+  .cmp-label { font-size:34px; font-weight:700; color:#f4f4f5; width:300px; text-align:right; flex-shrink:0; }
+  .cmp-track { flex:1; height:64px; background:rgba(255,255,255,0.05); border-radius:12px; overflow:hidden; }
+  .cmp-bar { height:100%; width:0%; background:linear-gradient(90deg, rgba(16,185,129,0.5), #10b981); border-radius:12px; }
+</style>
+</head>
+<body>
+<div id="stage" data-composition-id="nvidia" data-start="0" data-duration="64.76" data-width="1920" data-height="1080">
+  <div id="scene-0" class="scene clip" data-start="0" data-duration="10.175" data-track-index="0" style="background:linear-gradient(160deg, #0b0f0e, #161d28)">
+<div id="s0-l0" class="layer text center" data-text="AI 泡沫论？" style="font-size:150px;color:#f4f4f5;text-align:center;font-weight:900">AI 泡沫论？</div>
+<div id="s0-l1" class="layer metric">
+        <div class="metric-value"><span class="pre">$</span><span class="num" data-to="57">0</span><span class="suf">B</span></div>
+        <div class="metric-label">单季营收创纪录</div>
+      </div>
+<div id="s0-l2" class="layer text" data-text="盘后大涨超 5%" style="font-size:56px;color:#10b981;text-align:left;font-weight:800">盘后大涨超 5%</div>
+  </div>
+  <audio id="audio-0" class="clip" data-start="0" data-duration="10.175" data-track-index="10" src="scene-0.mp3"></audio>
+  <div id="scene-1" class="scene clip" data-start="10.18" data-duration="10.5125" data-track-index="0" style="background:linear-gradient(160deg, #10161f, #0b0f0e)">
+<div id="s10_18-l0" class="layer text" data-text="Q3 三项全超预期" style="font-size:56px;color:#10b981;text-align:left;font-weight:800">Q3 三项全超预期</div>
+<div id="s10_18-l1" class="layer stats" style="grid-template-columns:repeat(2,1fr)"><div class="stat" data-k="0"><div class="stat-label">营收</div><div class="stat-value">$57.0B</div><div class="stat-delta">+62% YoY</div></div><div class="stat" data-k="1"><div class="stat-label">净利润</div><div class="stat-value">$31.9B</div><div class="stat-delta">+65%</div></div><div class="stat" data-k="2"><div class="stat-label">每股收益</div><div class="stat-value">$1.30</div><div class="stat-delta">超预期 $1.25</div></div></div>
+  </div>
+  <audio id="audio-1" class="clip" data-start="10.18" data-duration="10.5125" data-track-index="11" src="scene-1.mp3"></audio>
+  <div id="scene-2" class="scene clip" data-start="20.69" data-duration="12.2125" data-track-index="0" style="background:#0b0f0e">
+<div id="s20_69-l0" class="layer ring-wrap">
+        <svg width="520" height="520" viewBox="0 0 520 520" class="ring">
+          <circle cx="260" cy="260" r="200" fill="none" stroke="rgba(255,255,255,0.08)" stroke-width="26"/>
+          <circle class="ring-fg" cx="260" cy="260" r="200" fill="none" stroke="#10b981" stroke-width="26"
+            stroke-linecap="round" transform="rotate(-90 260 260)"
+            stroke-dasharray="1256.6" stroke-dashoffset="1256.6"/>
+          <text x="260" y="272" text-anchor="middle" class="ring-text" data-final="89%">0%</text>
+        </svg>
+        <div class="ring-label">数据中心营收 512 亿美元</div>
+      </div>
+<div id="s20_69-l1" class="layer compare"><div class="cmp-row" data-k="0"><span class="cmp-label">数据中心增速</span><div class="cmp-track"><div class="cmp-bar" data-w="66"></div></div></div><div class="cmp-row" data-k="1"><span class="cmp-label">GPU 计算</span><div class="cmp-track"><div class="cmp-bar" data-w="430"></div></div></div><div class="cmp-row" data-k="2"><span class="cmp-label">网络互联</span><div class="cmp-track"><div class="cmp-bar" data-w="82"></div></div></div><div class="cmp-row" data-k="3"><span class="cmp-label">毛利率</span><div class="cmp-track"><div class="cmp-bar" data-w="73.4"></div></div></div></div>
+  </div>
+  <audio id="audio-2" class="clip" data-start="20.69" data-duration="12.2125" data-track-index="12" src="scene-2.mp3"></audio>
+  <div id="scene-3" class="scene clip" data-start="32.9" data-duration="10.075" data-track-index="0" style="background:linear-gradient(160deg, #0b0f0e, #161d28)">
+<div id="s32_9-l0" class="layer quote">
+        <div class="quote-mark">“</div>
+        <div class="quote-text">Blackwell 的销量远超预期，云 GPU 也已售罄</div>
+        <div class="quote-author"><span class="quote-rule"></span><span>黄仁勋</span></div>
+      </div>
+<div id="s32_9-l1" class="layer metric">
+        <div class="metric-value"><span class="pre"></span><span class="num" data-to="10">0</span><span class="suf">x</span></div>
+        <div class="metric-label">每兆瓦吞吐量提升</div>
+      </div>
+  </div>
+  <audio id="audio-3" class="clip" data-start="32.9" data-duration="10.075" data-track-index="13" src="scene-3.mp3"></audio>
+  <div id="scene-4" class="scene clip" data-start="42.97" data-duration="11.1375" data-track-index="0" style="background:linear-gradient(160deg, #10161f, #0b0f0e)">
+<div id="s42_97-l0" class="layer stats" style="grid-template-columns:repeat(2,1fr)"><div class="stat" data-k="0"><div class="stat-label">AI 收入缺口</div><div class="stat-value">$8000亿</div><div class="stat-delta">贝恩 2030 测算</div></div><div class="stat" data-k="1"><div class="stat-label">黄仁勋减持</div><div class="stat-value">超 $10亿</div><div class="stat-delta">6 月以来</div></div><div class="stat" data-k="2"><div class="stat-label">回购授权</div><div class="stat-value">$622亿</div><div class="stat-delta">多空托底</div></div></div>
+<div id="s42_97-l1" class="layer text" data-text="桥水、软银也在减持" style="font-size:56px;color:#a1a1aa;text-align:left;font-weight:800">桥水、软银也在减持</div>
+  </div>
+  <audio id="audio-4" class="clip" data-start="42.97" data-duration="11.1375" data-track-index="14" src="scene-4.mp3"></audio>
+  <div id="scene-5" class="scene clip" data-start="54.11" data-duration="10.65" data-track-index="0" style="background:linear-gradient(160deg, #0b0f0e, #161d28)">
+<div id="s54_11-l0" class="layer text" data-text="接下来盯四个信号" style="font-size:56px;color:#10b981;text-align:left;font-weight:800">接下来盯四个信号</div>
+<div id="s54_11-l1" class="layer timeline"><div class="tl-line"></div><div class="tl-row"><div class="tl-step" data-k="0"><div class="tl-dot">1</div><div class="tl-name">盯供给·Ultra </div></div><div class="tl-step" data-k="1"><div class="tl-dot">2</div><div class="tl-name">盯缺口·8000 亿</div></div><div class="tl-step" data-k="2"><div class="tl-dot">3</div><div class="tl-name">盯兑现·650 亿指</div></div><div class="tl-step" data-k="3"><div class="tl-dot">4</div><div class="tl-name">盯内部人·减持 vs</div></div></div></div>
+<div id="s54_11-l2" class="layer card accent">
+        <div class="card-title">完整财报拆解</div>
+        <div class="card-body">页面下方链接，点开看全文数据</div>
+      </div>
+  </div>
+  <audio id="audio-5" class="clip" data-start="54.11" data-duration="10.65" data-track-index="15" src="scene-5.mp3"></audio>
+</div>
+<script>
+  gsap.registerPlugin();
+  const tl = gsap.timeline({ paused: true });
+
+  // scramble: 逐字解码
+  (function(){
+    const el = document.querySelector('#s0-l0');
+    const final = el.dataset.text;
+    const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789#@%&';
+    function mulberry32(a){ return function(){ a|=0; a=a+0x6D2B79F5|0; let t=Math.imul(a^a>>>15,1|a); t=t+Math.imul(t^t>>>7,61|t)^t; return ((t^t>>>14)>>>0)/4294967296; } }
+    const o = {p:0};
+    tl.to(o, {p:1, duration:1.4, ease:'none', onUpdate:function(){
+      const n = Math.floor(o.p * final.length * 1.6);
+      let out = '';
+      const rnd = mulberry32(Math.floor(o.p * 1000) + 7);
+      for (let k=0;k<final.length;k++){
+        out += (k < n) ? final[k] : (final[k]===' '?' ':chars[Math.floor(rnd()*chars.length)]);
+      }
+      el.textContent = out;
+    }, onComplete:function(){ el.textContent = final; }}, 0.2);
+  })();
+
+  (function(){
+    const wrap = document.querySelector('#s0-l1');
+    const numEl = wrap.querySelector('.num');
+    const to = parseFloat(numEl.dataset.to);
+    const o = {v:0};
+    tl.from(wrap, {opacity:0, y:30, duration:0.6, ease:'power2.out'}, 0.9);
+    tl.to(o, {v:to, duration:1.3, ease:'power2.out', onUpdate:function(){
+      const n = o.v;
+      numEl.textContent = n >= 100 ? Math.round(n).toLocaleString('en-US') : n.toFixed(n < 10 ? 1 : 0);
+    }}, 1);
+    tl.from(wrap.querySelector('.metric-label'), {opacity:0, y:12, duration:0.5, ease:'power2.out'}, 1.3);
+  })();
+  tl.from('#s0-l2', {opacity:0, y:26, duration:0.7, ease:'power3.out'}, 1.4);
+  tl.from('#s10_18-l0', {opacity:0, y:26, duration:0.7, ease:'power3.out'}, 10.379999999999999);
+  tl.from('#s10_18-l1 .stat', {opacity:0, y:34, duration:0.75, stagger:0.16, ease:'power3.out'}, 10.68);
+
+  (function(){
+    const wrap = document.querySelector('#s20_69-l0');
+    const ring = wrap.querySelector('.ring-fg');
+    const txt = wrap.querySelector('.ring-text');
+    const circ = 1256.6;
+    const ratio = 0.9;
+    const finalTxt = txt.dataset.final;
+    const o = {p:0};
+    tl.from(wrap, {opacity:0, scale:0.88, duration:0.9, ease:'power3.out'}, 20.89);
+    tl.to(o, {p:1, duration:1.5, ease:'power2.out', onUpdate:function(){
+      ring.setAttribute('stroke-dashoffset', (circ*(1-ratio*o.p)).toFixed(1));
+      const pct = Math.round(ratio*o.p*100);
+      txt.textContent = finalTxt.replace(/%/, pct + '%').replace(/[\d.]+/, pct);
+    }}, 21.09);
+    tl.from(wrap.querySelector('.ring-label'), {opacity:0, y:16, duration:0.6, ease:'power2.out'}, 21.79);
+  })();
+
+  (function(){
+    const rows = document.querySelectorAll('#s20_69-l1 .cmp-row');
+    rows.forEach(function(row, k){
+      const bar = row.querySelector('.cmp-bar');
+      const w = (parseFloat(bar.dataset.w) / 430) * 100;
+      tl.from(row, {opacity:0, x:-20, duration:0.5, ease:'power2.out'}, 21.490000000000002 + k*0.16);
+      tl.fromTo(bar, {width:'0%'}, {width: w.toFixed(1)+'%', duration:0.9, ease:'power3.out'}, 21.490000000000002 + k*0.16 + 0.1);
+    });
+  })();
+
+  tl.from('#s32_9-l0', {opacity:0, y:40, duration:0.9, ease:'power3.out'}, 33.199999999999996);
+  tl.from('#s32_9-l0 .quote-mark', {opacity:0, scale:0.5, duration:0.8, ease:'back.out(1.8)'}, 33.199999999999996);
+  tl.from('#s32_9-l0 .quote-choice, #s32_9-l0 .quote-author', {opacity:0, y:14, duration:0.6, ease:'power2.out'}, 33.55);
+  tl.from('#s32_9-l0 .quote-rule', {scaleX:0, duration:0.7, ease:'power2.inOut', transformOrigin:'left center'}, 33.699999999999996);
+
+  (function(){
+    const wrap = document.querySelector('#s32_9-l1');
+    const numEl = wrap.querySelector('.num');
+    const to = parseFloat(numEl.dataset.to);
+    const o = {v:0};
+    tl.from(wrap, {opacity:0, y:30, duration:0.6, ease:'power2.out'}, 33.8);
+    tl.to(o, {v:to, duration:1.3, ease:'power2.out', onUpdate:function(){
+      const n = o.v;
+      numEl.textContent = n >= 100 ? Math.round(n).toLocaleString('en-US') : n.toFixed(n < 10 ? 1 : 0);
+    }}, 33.9);
+    tl.from(wrap.querySelector('.metric-label'), {opacity:0, y:12, duration:0.5, ease:'power2.out'}, 34.199999999999996);
+  })();
+  tl.from('#s42_97-l0 .stat', {opacity:0, y:34, duration:0.75, stagger:0.16, ease:'power3.out'}, 43.269999999999996);
+  tl.from('#s42_97-l1', {opacity:0, y:26, duration:0.7, ease:'power3.out'}, 43.87);
+  tl.from('#s54_11-l0', {opacity:0, scale:0.86, y:28, duration:0.9, ease:'back.out(2.2)'}, 54.31);
+
+  tl.from('#s54_11-l1 .tl-line', {scaleX:0, duration:0.9, ease:'power2.inOut', transformOrigin:'left center'}, 54.61);
+  tl.from('#s54_11-l1 .tl-step', {opacity:0, y:26, scale:0.8, duration:0.7, stagger:0.18, ease:'back.out(1.8)'}, 54.76);
+
+  tl.from('#s54_11-l2', {opacity:0, y:24, duration:0.7, ease:'power3.out'}, 55.01);
+  // border-beam: 一圈描边光扫过（用 conic-gradient 遮罩旋转）
+  tl.fromTo('#s54_11-l2', {backgroundPosition:'-140% 0'}, {backgroundPosition:'240% 0', duration:1.8, ease:'power2.inOut'}, 55.01);
+  window.__timelines = window.__timelines || {};
+  window.__timelines["nvidia"] = tl;
+</script>
+</body>
+</html>

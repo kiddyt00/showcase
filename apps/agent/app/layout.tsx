@@ -33,14 +33,14 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
         <header className="border-b border-[#21283a] bg-[#0d1117]">
           <div className="flex items-center justify-between px-4 py-2.5">
             <div className="flex items-center gap-3">
-              <span className="font-mono text-sm font-bold tracking-tight">
+              <span className="text-sm font-semibold tracking-tight">
                 show<span className="text-emerald-400">case</span>
-                <span className="ml-2 rounded border border-[#2a3347] px-1.5 py-0.5 text-[10px] text-[#8b96a8]">
+                <span className="ml-2 rounded border border-[#2a3347] px-1.5 py-0.5 font-mono text-[10px] text-[#8b96a8]">
                   agent
                 </span>
               </span>
             </div>
-            <nav className="flex items-center gap-3 font-mono text-xs text-[#8b96a8]">
+            <nav className="flex items-center gap-3 text-xs text-[#8b96a8]">
               <Link href="/" className="hover:text-emerald-400">
                 最新内容 ↗
               </Link>

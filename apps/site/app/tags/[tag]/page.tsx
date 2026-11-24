@@ -1,3 +1,4 @@
+import { connection } from "next/server";
 import { listPageSummaries } from "@showcase/core/store";
 import Link from "next/link";
 import type { Metadata } from "next";
@@ -22,6 +23,7 @@ export default async function TagPage({
 }) {
   const { tag: raw } = await params;
   const tag = /%/.test(raw) ? decodeURIComponent(raw) : raw;
+  await connection(); // 请求时渲染，保证新发布内容实时可见
   const pages = listPageSummaries(100).filter((p) => p.tags.includes(tag));
 
   return (

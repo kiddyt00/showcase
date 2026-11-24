@@ -5,6 +5,7 @@ import { Markdown } from "./Markdown";
 import Toc, { type TocItem } from "./Toc";
 import DiagramFrame from "./DiagramFrame";
 import FlowDiagram from "@/components/FlowDiagram";
+import { CountUp } from "./Motion";
 import { readMinutes, categoryLabel, getCollections } from "@/lib/collections";
 
 export default function PageView({ page }: { page: PageContent }) {
@@ -103,7 +104,12 @@ export default function PageView({ page }: { page: PageContent }) {
                   <div key={k} className="min-w-0">
                     <p className="text-xs text-muted">{k}</p>
                     <p className="mt-0.5 text-sm font-medium text-[var(--fg)] [overflow-wrap:anywhere]">
-                      {display}
+                      {/* 大数字（stars/forks/issues）进视口滚动呈现 */}
+                      {typeof v === "number" && v >= 100 && k.length <= 12 ? (
+                        <CountUp value={v} />
+                      ) : (
+                        display
+                      )}
                     </p>
                   </div>
                 );
@@ -188,6 +194,24 @@ export default function PageView({ page }: { page: PageContent }) {
                 </h2>
               </div>
               {section.body && <Markdown text={section.body} />}
+              {/* 章节配图（免费图库自动匹配）+ 图注 */}
+              {section.image ? (
+                <figure className="my-5">
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img
+                    src={section.image}
+                    alt={section.imageCaption || section.heading}
+                    loading="lazy"
+                    decoding="async"
+                    className="w-full rounded-[var(--radius)] border border-[var(--border)] object-cover"
+                  />
+                  {section.imageCaption ? (
+                    <figcaption className="mt-1.5 text-center text-xs text-muted">
+                      {section.imageCaption}
+                    </figcaption>
+                  ) : null}
+                </figure>
+              ) : null}
               {section.bullets?.length ? (
                 <ul className="mt-2 space-y-1">
                   {section.bullets.map((b, j) => (

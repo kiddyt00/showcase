@@ -1,0 +1,458 @@
+﻿[
+    {
+        "keyword":  "570亿美元！",
+        "note":  "单季营收创纪录，盘后涨超5%",
+        "heading":  "570亿美元！",
+        "bullets":  [
+
+                    ],
+        "narration":  "AI是泡沫还是金矿？英伟达用一份财报直接回击：单季营收570亿美元，创历史纪录，盘后大涨超5%。",
+        "visual":  "storyboard",
+        "beats":  [
+                      {
+                          "atWord":  "泡沫",
+                          "action":  "light",
+                          "label":  "泡沫论之争"
+                      },
+                      {
+                          "atWord":  "570亿美元",
+                          "action":  "light",
+                          "label":  "创纪录营收"
+                      },
+                      {
+                          "atWord":  "5%",
+                          "action":  "light",
+                          "label":  "盘后大涨"
+                      }
+                  ],
+        "storyboard":  {
+                           "background":  {
+                                              "type":  "gradient",
+                                              "from":  "#0b0f0e",
+                                              "to":  "#161d28",
+                                              "angle":  160
+                                          },
+                           "layers":  [
+                                          {
+                                              "type":  "text",
+                                              "content":  "AI 泡沫论？",
+                                              "size":  "giant",
+                                              "align":  "center",
+                                              "color":  "fg",
+                                              "enter":  {
+                                                            "fx":  "scramble",
+                                                            "delaySec":  0.2
+                                                        }
+                                          },
+                                          {
+                                              "type":  "metric",
+                                              "label":  "单季营收创纪录",
+                                              "value":  "$57.0B",
+                                              "enter":  {
+                                                            "fx":  "spring",
+                                                            "delaySec":  0.9
+                                                        }
+                                          },
+                                          {
+                                              "type":  "text",
+                                              "content":  "盘后大涨超 5%",
+                                              "size":  "medium",
+                                              "align":  "left",
+                                              "color":  "accent",
+                                              "enter":  {
+                                                            "fx":  "fade-up",
+                                                            "delaySec":  1.4
+                                                        }
+                                          }
+                                      ],
+                           "transitions":  {
+                                               "in":  "zoom",
+                                               "out":  "fade"
+                                           }
+                       },
+        "hookScene":  true
+    },
+    {
+        "keyword":  "三项全超预期",
+        "note":  "营收、利润、EPS 全超预期",
+        "heading":  "三项全超预期",
+        "bullets":  [
+
+                    ],
+        "narration":  "营收570亿美元，同比增62%；净利润319亿美元，大涨65%；每股收益1.30美元，全部超市场预期。",
+        "visual":  "storyboard",
+        "beats":  [
+                      {
+                          "atWord":  "62%",
+                          "action":  "light",
+                          "label":  "同比增速"
+                      },
+                      {
+                          "atWord":  "319亿",
+                          "action":  "light",
+                          "label":  "净利润"
+                      },
+                      {
+                          "atWord":  "1.30",
+                          "action":  "light",
+                          "label":  "超预期EPS"
+                      }
+                  ],
+        "storyboard":  {
+                           "background":  {
+                                              "type":  "gradient",
+                                              "from":  "#10161f",
+                                              "to":  "#0b0f0e",
+                                              "angle":  160
+                                          },
+                           "layers":  [
+                                          {
+                                              "type":  "text",
+                                              "content":  "Q3 三项全超预期",
+                                              "size":  "medium",
+                                              "align":  "left",
+                                              "color":  "accent",
+                                              "enter":  {
+                                                            "fx":  "fade-up",
+                                                            "delaySec":  0.2
+                                                        }
+                                          },
+                                          {
+                                              "type":  "stats",
+                                              "stats":  [
+                                                            {
+                                                                "label":  "营收",
+                                                                "value":  "$57.0B",
+                                                                "delta":  "+62% YoY"
+                                                            },
+                                                            {
+                                                                "label":  "净利润",
+                                                                "value":  "$31.9B",
+                                                                "delta":  "+65%"
+                                                            },
+                                                            {
+                                                                "label":  "每股收益",
+                                                                "value":  "$1.30",
+                                                                "delta":  "超预期 $1.25"
+                                                            }
+                                                        ],
+                                              "enter":  {
+                                                            "fx":  "fade-up",
+                                                            "delaySec":  0.5
+                                                        }
+                                          }
+                                      ],
+                           "transitions":  {
+                                               "in":  "slide-left",
+                                               "out":  "fade"
+                                           }
+                       },
+        "hookScene":  false
+    },
+    {
+        "keyword":  "数据中心 90%",
+        "note":  "512亿=近九成营收，拆GPU与网络",
+        "heading":  "数据中心 90%",
+        "bullets":  [
+
+                    ],
+        "narration":  "数据中心扛起九成营收：512亿美元，同比增66%。其中GPU计算430亿，网络互联82亿，毛利率73.4%。",
+        "visual":  "storyboard",
+        "beats":  [
+                      {
+                          "atWord":  "512亿",
+                          "action":  "light",
+                          "label":  "数据中心营收"
+                      },
+                      {
+                          "atWord":  "66%",
+                          "action":  "light",
+                          "label":  "数据中心增速"
+                      },
+                      {
+                          "atWord":  "430亿",
+                          "action":  "light",
+                          "label":  "GPU计算"
+                      },
+                      {
+                          "atWord":  "73.4%",
+                          "action":  "light",
+                          "label":  "毛利率"
+                      }
+                  ],
+        "storyboard":  {
+                           "background":  {
+                                              "type":  "solid",
+                                              "from":  "#0b0f0e"
+                                          },
+                           "layers":  [
+                                          {
+                                              "type":  "ring",
+                                              "ratio":  0.9,
+                                              "label":  "数据中心营收 512 亿美元",
+                                              "centerText":  "89%",
+                                              "enter":  {
+                                                            "fx":  "scale-blur",
+                                                            "delaySec":  0.2
+                                                        }
+                                          },
+                                          {
+                                              "type":  "compare",
+                                              "beats":  [
+                                                            {
+                                                                "atWord":  "66%",
+                                                                "action":  "light",
+                                                                "content":  "+66% YoY",
+                                                                "label":  "数据中心增速"
+                                                            },
+                                                            {
+                                                                "atWord":  "430亿",
+                                                                "action":  "light",
+                                                                "content":  "430 亿美元",
+                                                                "label":  "GPU 计算"
+                                                            },
+                                                            {
+                                                                "atWord":  "82亿",
+                                                                "action":  "light",
+                                                                "content":  "82 亿美元",
+                                                                "label":  "网络互联"
+                                                            },
+                                                            {
+                                                                "atWord":  "73.4%",
+                                                                "action":  "light",
+                                                                "content":  "GAAP 73.4%",
+                                                                "label":  "毛利率"
+                                                            }
+                                                        ],
+                                              "enter":  {
+                                                            "fx":  "fade-up",
+                                                            "delaySec":  0.8
+                                                        }
+                                          }
+                                      ],
+                           "transitions":  {
+                                               "in":  "fade",
+                                               "out":  "fade"
+                                           }
+                       },
+        "hookScene":  false
+    },
+    {
+        "keyword":  "云GPU售罄",
+        "note":  "售罄+吞吐量10倍，需求最硬证据",
+        "heading":  "云GPU售罄",
+        "bullets":  [
+
+                    ],
+        "narration":  "黄仁勋放话：Blackwell 销量远超预期，云 GPU 全部售罄。每兆瓦吞吐量是上一代10倍，一度电能干十倍的活。",
+        "visual":  "storyboard",
+        "beats":  [
+                      {
+                          "atWord":  "远超预期",
+                          "action":  "light",
+                          "label":  "销量超预期"
+                      },
+                      {
+                          "atWord":  "售罄",
+                          "action":  "light",
+                          "label":  "云GPU售罄"
+                      },
+                      {
+                          "atWord":  "10倍",
+                          "action":  "light",
+                          "label":  "吞吐量10倍"
+                      }
+                  ],
+        "storyboard":  {
+                           "background":  {
+                                              "type":  "gradient",
+                                              "from":  "#0b0f0e",
+                                              "to":  "#161d28",
+                                              "angle":  160
+                                          },
+                           "layers":  [
+                                          {
+                                              "type":  "quote",
+                                              "quote":  "Blackwell 的销量远超预期，云 GPU 也已售罄",
+                                              "author":  "黄仁勋",
+                                              "enter":  {
+                                                            "fx":  "spotlight",
+                                                            "delaySec":  0.3
+                                                        }
+                                          },
+                                          {
+                                              "type":  "metric",
+                                              "label":  "每兆瓦吞吐量提升",
+                                              "value":  "10x",
+                                              "enter":  {
+                                                            "fx":  "spring",
+                                                            "delaySec":  0.9
+                                                        }
+                                          }
+                                      ],
+                           "transitions":  {
+                                               "in":  "slide-right",
+                                               "out":  "fade"
+                                           }
+                       },
+        "hookScene":  false
+    },
+    {
+        "keyword":  "8000亿缺口",
+        "note":  "机构减持与缺口，反方证据清单",
+        "heading":  "8000亿缺口",
+        "bullets":  [
+
+                    ],
+        "narration":  "但反方证据也在：贝恩测算8000亿美元缺口，桥水、软银减持，黄仁勋本人卖出超10亿美元股票。多空信号交织。",
+        "visual":  "storyboard",
+        "beats":  [
+                      {
+                          "atWord":  "8000亿",
+                          "action":  "light",
+                          "label":  "缺口测算"
+                      },
+                      {
+                          "atWord":  "减持",
+                          "action":  "light",
+                          "label":  "机构减持"
+                      },
+                      {
+                          "atWord":  "10亿",
+                          "action":  "light",
+                          "label":  "内部人卖出"
+                      }
+                  ],
+        "storyboard":  {
+                           "background":  {
+                                              "type":  "gradient",
+                                              "from":  "#10161f",
+                                              "to":  "#0b0f0e",
+                                              "angle":  160
+                                          },
+                           "layers":  [
+                                          {
+                                              "type":  "stats",
+                                              "stats":  [
+                                                            {
+                                                                "label":  "AI 收入缺口",
+                                                                "value":  "$8000亿",
+                                                                "delta":  "贝恩 2030 测算"
+                                                            },
+                                                            {
+                                                                "label":  "黄仁勋减持",
+                                                                "value":  "超 $10亿",
+                                                                "delta":  "6 月以来"
+                                                            },
+                                                            {
+                                                                "label":  "回购授权",
+                                                                "value":  "$622亿",
+                                                                "delta":  "多空托底"
+                                                            }
+                                                        ],
+                                              "enter":  {
+                                                            "fx":  "fade-up",
+                                                            "delaySec":  0.3
+                                                        }
+                                          },
+                                          {
+                                              "type":  "text",
+                                              "content":  "桥水、软银也在减持",
+                                              "size":  "medium",
+                                              "align":  "left",
+                                              "color":  "sub",
+                                              "enter":  {
+                                                            "fx":  "fade-up",
+                                                            "delaySec":  0.9
+                                                        }
+                                          }
+                                      ],
+                           "transitions":  {
+                                               "in":  "slide-left",
+                                               "out":  "fade"
+                                           }
+                       },
+        "hookScene":  false
+    },
+    {
+        "keyword":  "盯住四个信号",
+        "note":  "供给、缺口、兑现、内部人",
+        "heading":  "盯住四个信号",
+        "bullets":  [
+
+                    ],
+        "narration":  "普通读者盯住四个信号：供给节奏、收入缺口、指引兑现、内部人动作。完整拆解在页面下方，点开链接看全文。",
+        "visual":  "storyboard",
+        "beats":  [
+                      {
+                          "atWord":  "四个信号",
+                          "action":  "light",
+                          "label":  "观测框架"
+                      },
+                      {
+                          "atWord":  "供给",
+                          "action":  "light",
+                          "label":  "盯供给"
+                      },
+                      {
+                          "atWord":  "兑现",
+                          "action":  "light",
+                          "label":  "盯兑现"
+                      },
+                      {
+                          "atWord":  "链接",
+                          "action":  "light",
+                          "label":  "引导点击"
+                      }
+                  ],
+        "storyboard":  {
+                           "background":  {
+                                              "type":  "gradient",
+                                              "from":  "#0b0f0e",
+                                              "to":  "#161d28",
+                                              "angle":  160
+                                          },
+                           "layers":  [
+                                          {
+                                              "type":  "text",
+                                              "content":  "接下来盯四个信号",
+                                              "size":  "medium",
+                                              "align":  "left",
+                                              "color":  "accent",
+                                              "enter":  {
+                                                            "fx":  "spring",
+                                                            "delaySec":  0.2
+                                                        }
+                                          },
+                                          {
+                                              "type":  "timeline",
+                                              "steps":  [
+                                                            "盯供给·Ultra ",
+                                                            "盯缺口·8000 亿",
+                                                            "盯兑现·650 亿指",
+                                                            "盯内部人·减持 vs"
+                                                        ],
+                                              "enter":  {
+                                                            "fx":  "fade-up",
+                                                            "delaySec":  0.5
+                                                        }
+                                          },
+                                          {
+                                              "type":  "card",
+                                              "title":  "完整财报拆解",
+                                              "body":  "页面下方链接，点开看全文数据",
+                                              "accent":  true,
+                                              "enter":  {
+                                                            "fx":  "border-beam",
+                                                            "delaySec":  0.9
+                                                        }
+                                          }
+                                      ],
+                           "transitions":  {
+                                               "in":  "zoom",
+                                               "out":  "fade"
+                                           }
+                       },
+        "hookScene":  false
+    }
+]

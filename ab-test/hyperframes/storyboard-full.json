@@ -1,0 +1,310 @@
+[
+ {
+  "keyword": "570亿美元！",
+  "duration": 10.175,
+  "storyboard": {
+   "background": {
+    "type": "gradient",
+    "from": "#0b0f0e",
+    "to": "#161d28",
+    "angle": 160
+   },
+   "layers": [
+    {
+     "type": "text",
+     "content": "AI 泡沫论？",
+     "size": "giant",
+     "align": "center",
+     "color": "fg",
+     "enter": {
+      "fx": "scramble",
+      "delaySec": 0.2
+     }
+    },
+    {
+     "type": "metric",
+     "label": "单季营收创纪录",
+     "value": "$57.0B",
+     "enter": {
+      "fx": "spring",
+      "delaySec": 0.9
+     }
+    },
+    {
+     "type": "text",
+     "content": "盘后大涨超 5%",
+     "size": "medium",
+     "align": "left",
+     "color": "accent",
+     "enter": {
+      "fx": "fade-up",
+      "delaySec": 1.4
+     }
+    }
+   ],
+   "transitions": {
+    "in": "zoom",
+    "out": "fade"
+   }
+  },
+  "audio": "scene-0.mp3"
+ },
+ {
+  "keyword": "三项全超预期",
+  "duration": 10.5125,
+  "storyboard": {
+   "background": {
+    "type": "gradient",
+    "from": "#10161f",
+    "to": "#0b0f0e",
+    "angle": 160
+   },
+   "layers": [
+    {
+     "type": "text",
+     "content": "Q3 三项全超预期",
+     "size": "medium",
+     "align": "left",
+     "color": "accent",
+     "enter": {
+      "fx": "fade-up",
+      "delaySec": 0.2
+     }
+    },
+    {
+     "type": "stats",
+     "stats": [
+      {
+       "label": "营收",
+       "value": "$57.0B",
+       "delta": "+62% YoY"
+      },
+      {
+       "label": "净利润",
+       "value": "$31.9B",
+       "delta": "+65%"
+      },
+      {
+       "label": "每股收益",
+       "value": "$1.30",
+       "delta": "超预期 $1.25"
+      }
+     ],
+     "enter": {
+      "fx": "fade-up",
+      "delaySec": 0.5
+     }
+    }
+   ],
+   "transitions": {
+    "in": "slide-left",
+    "out": "fade"
+   }
+  },
+  "audio": "scene-1.mp3"
+ },
+ {
+  "keyword": "数据中心 90%",
+  "duration": 12.2125,
+  "storyboard": {
+   "background": {
+    "type": "solid",
+    "from": "#0b0f0e"
+   },
+   "layers": [
+    {
+     "type": "ring",
+     "ratio": 0.9,
+     "label": "数据中心营收 512 亿美元",
+     "centerText": "89%",
+     "enter": {
+      "fx": "scale-blur",
+      "delaySec": 0.2
+     }
+    },
+    {
+     "type": "compare",
+     "beats": [
+      {
+       "atWord": "66%",
+       "action": "light",
+       "content": "+66% YoY",
+       "label": "数据中心增速"
+      },
+      {
+       "atWord": "430亿",
+       "action": "light",
+       "content": "430 亿美元",
+       "label": "GPU 计算"
+      },
+      {
+       "atWord": "82亿",
+       "action": "light",
+       "content": "82 亿美元",
+       "label": "网络互联"
+      },
+      {
+       "atWord": "73.4%",
+       "action": "light",
+       "content": "GAAP 73.4%",
+       "label": "毛利率"
+      }
+     ],
+     "enter": {
+      "fx": "fade-up",
+      "delaySec": 0.8
+     }
+    }
+   ],
+   "transitions": {
+    "in": "fade",
+    "out": "fade"
+   }
+  },
+  "audio": "scene-2.mp3"
+ },
+ {
+  "keyword": "云GPU售罄",
+  "duration": 10.075,
+  "storyboard": {
+   "background": {
+    "type": "gradient",
+    "from": "#0b0f0e",
+    "to": "#161d28",
+    "angle": 160
+   },
+   "layers": [
+    {
+     "type": "quote",
+     "quote": "Blackwell 的销量远超预期，云 GPU 也已售罄",
+     "author": "黄仁勋",
+     "enter": {
+      "fx": "spotlight",
+      "delaySec": 0.3
+     }
+    },
+    {
+     "type": "metric",
+     "label": "每兆瓦吞吐量提升",
+     "value": "10x",
+     "enter": {
+      "fx": "spring",
+      "delaySec": 0.9
+     }
+    }
+   ],
+   "transitions": {
+    "in": "slide-right",
+    "out": "fade"
+   }
+  },
+  "audio": "scene-3.mp3"
+ },
+ {
+  "keyword": "8000亿缺口",
+  "duration": 11.1375,
+  "storyboard": {
+   "background": {
+    "type": "gradient",
+    "from": "#10161f",
+    "to": "#0b0f0e",
+    "angle": 160
+   },
+   "layers": [
+    {
+     "type": "stats",
+     "stats": [
+      {
+       "label": "AI 收入缺口",
+       "value": "$8000亿",
+       "delta": "贝恩 2030 测算"
+      },
+      {
+       "label": "黄仁勋减持",
+       "value": "超 $10亿",
+       "delta": "6 月以来"
+      },
+      {
+       "label": "回购授权",
+       "value": "$622亿",
+       "delta": "多空托底"
+      }
+     ],
+     "enter": {
+      "fx": "fade-up",
+      "delaySec": 0.3
+     }
+    },
+    {
+     "type": "text",
+     "content": "桥水、软银也在减持",
+     "size": "medium",
+     "align": "left",
+     "color": "sub",
+     "enter": {
+      "fx": "fade-up",
+      "delaySec": 0.9
+     }
+    }
+   ],
+   "transitions": {
+    "in": "slide-left",
+    "out": "fade"
+   }
+  },
+  "audio": "scene-4.mp3"
+ },
+ {
+  "keyword": "盯住四个信号",
+  "duration": 10.65,
+  "storyboard": {
+   "background": {
+    "type": "gradient",
+    "from": "#0b0f0e",
+    "to": "#161d28",
+    "angle": 160
+   },
+   "layers": [
+    {
+     "type": "text",
+     "content": "接下来盯四个信号",
+     "size": "medium",
+     "align": "left",
+     "color": "accent",
+     "enter": {
+      "fx": "spring",
+      "delaySec": 0.2
+     }
+    },
+    {
+     "type": "timeline",
+     "steps": [
+      "盯供给·Ultra ",
+      "盯缺口·8000 亿",
+      "盯兑现·650 亿指",
+      "盯内部人·减持 vs"
+     ],
+     "enter": {
+      "fx": "fade-up",
+      "delaySec": 0.5
+     }
+    },
+    {
+     "type": "card",
+     "title": "完整财报拆解",
+     "body": "页面下方链接，点开看全文数据",
+     "accent": true,
+     "enter": {
+      "fx": "border-beam",
+      "delaySec": 0.9
+     }
+    }
+   ],
+   "transitions": {
+    "in": "zoom",
+    "out": "fade"
+   }
+  },
+  "audio": "scene-5.mp3"
+ }
+]

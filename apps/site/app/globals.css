@@ -190,3 +190,107 @@ a, button, summary, input, select, textarea {
   background-size: 200% 100%;
   animation: skeleton-pulse 1.4s ease-in-out infinite;
 }
+
+/* ==================== 动效升级（unslop 纪律：moment 集中，chrome 安静） ==================== */
+
+/* 滚动触发入场：IntersectionObserver 挂 .in-view 后触发（替代一次性 .reveal 的滚动版本） */
+.scroll-reveal {
+  opacity: 0;
+  transform: translateY(16px);
+  transition:
+    opacity 600ms cubic-bezier(0.22, 1, 0.36, 1),
+    transform 600ms cubic-bezier(0.22, 1, 0.36, 1);
+  transition-delay: var(--reveal-delay, 0ms);
+}
+.scroll-reveal.in-view {
+  opacity: 1;
+  transform: translateY(0);
+}
+
+/* Spotlight 精选卡：鼠标位置聚光（--mx/--my 由 SpotCard 组件写入） */
+.spot-card {
+  position: relative;
+}
+.spot-card::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 300ms ease;
+  background: radial-gradient(
+    320px circle at var(--mx, 50%) var(--my, 50%),
+    rgb(179 69 46 / 0.08),
+    transparent 65%
+  );
+}
+.spot-card:hover::before {
+  opacity: 1;
+}
+
+/* 3D Tilt：--tilt-x/--tilt-y 由组件写入，perspective 由容器提供 */
+.tilt-wrap {
+  perspective: 900px;
+}
+.tilt {
+  transition: transform 180ms ease-out;
+  transform: rotateX(var(--tilt-x, 0deg)) rotateY(var(--tilt-y, 0deg));
+  will-change: transform;
+}
+
+/* CountUp 数字：tabular 等宽数字防跳动 */
+.count-up {
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0.01em;
+}
+
+/* Border Beam：一道细光沿精选卡边框循环（仅一处使用，克制） */
+@keyframes border-beam-spin {
+  to { --beam-angle: 360deg; }
+}
+@property --beam-angle {
+  syntax: "<angle>";
+  initial-value: 0deg;
+  inherits: false;
+}
+.beam-card {
+  position: relative;
+  overflow: hidden;
+}
+.beam-card::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  padding: 1px;
+  pointer-events: none;
+  background: conic-gradient(
+    from var(--beam-angle),
+    transparent 0deg,
+    transparent 300deg,
+    rgb(179 69 46 / 0.55) 340deg,
+    transparent 360deg
+  );
+  -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+  -webkit-mask-composite: xor;
+  mask: linear-gradient(#000 0 0) content-box exclude, linear-gradient(#000 0 0);
+  animation: border-beam-spin 6s linear infinite;
+}
+
+/* reduced-motion：全部新动效退化为静态 */
+@media (prefers-reduced-motion: reduce) {
+  .scroll-reveal {
+    opacity: 1;
+    transform: none;
+    transition: none;
+  }
+  .spot-card::before,
+  .beam-card::after {
+    display: none;
+  }
+  .tilt {
+    transform: none !important;
+    transition: none;
+  }
+}

@@ -20,13 +20,234 @@ const T = {
   muted: "#52525b",
 };
 
+const C = { panel2: "#161d28" };
+
 /** 从 beats 提取节拍标签序列（不足 count 时补默认名） */
 function beatLabels(beats: TemplateProps["beats"], count: number, fallbackPrefix: string): string[] {
   return Array.from({ length: count }, (_, i) => beats[i]?.label || `${fallbackPrefix} ${i + 1}`);
 }
 
-/* ---------- 1. FlowPath 流程路径（伪 3D 纵深） ---------- */
+/* ---------- 0. Web 动效移植：Spring/Beam/Scramble/Spotlight（帧驱动版） ---------- */
 
+/** 弹簧缓动（临界阻尼近似，无外部依赖）：给 Remotion spring 的轻量替代 */
+function springEase(t: number, overshoot = 1.2): number {
+  if (t <= 0) return 0;
+  if (t >= 1) return 1;
+  // 阻尼正弦：一次轻微过冲后稳定
+  return 1 - Math.exp(-6 * t) * Math.cos(overshoot * Math.PI * t) * (1 - t * 0.3);
+}
+
+/** SpringCounter：数字从 0 弹簧滚到目标值（带过冲回落），替代匀速 count 的升级版 */
+export const SpringCounter: React.FC<{
+  value: number;
+  frame: number;
+  durationFrames?: number;
+  label?: string;
+  suffix?: string;
+  fontSize?: number;
+}> = ({ value, frame, durationFrames = 60, label, suffix, fontSize = 150 }) => {
+  const p = Math.min(1, frame / durationFrames);
+  const eased = springEase(p);
+  const current = Math.round(value * eased);
+  const scale = 1 + (1 - eased) * 0.06; // 起步略大，落定时回正
+  return (
+    <div style={{ textAlign: "center", width: "100%" }}>
+      <div
+        style={{
+          fontFamily: "sans-serif",
+          fontSize,
+          fontWeight: 900,
+          color: T.accent,
+          fontVariantNumeric: "tabular-nums",
+          lineHeight: 1,
+          transform: `scale(${scale.toFixed(3)})`,
+          transformOrigin: "center bottom",
+        }}
+      >
+        {current.toLocaleString("en-US")}
+        {suffix ? <span style={{ fontSize: fontSize * 0.4, marginLeft: 8 }}>{suffix}</span> : null}
+      </div>
+      {label ? (
+        <div
+          style={{
+            fontFamily: "sans-serif",
+            fontSize: 30,
+            color: T.sub,
+            marginTop: 18,
+            opacity: interpolate(frame, [10, 25], [0, 1], clamp),
+          }}
+        >
+          {label}
+        </div>
+      ) : null}
+    </div>
+  );
+};
+
+/** BorderBeam：细光束沿卡片边框循环（帧驱动 conic-gradient，SVG mask 实现） */
+export const BorderBeam: React.FC<{
+  width: number;
+  height: number;
+  frame: number;
+  radius?: number;
+  periodFrames?: number;
+  color?: string;
+  children?: React.ReactNode;
+}> = ({ width, height, frame, radius = 28, periodFrames = 150, color = "rgba(16,185,129,0.85)", children }) => {
+  const id = `beam-${width}-${height}`;
+  const angle = ((frame % periodFrames) / periodFrames) * 360;
+  return (
+    <div style={{ position: "relative", width, height }}>
+      <div
+        style={{
+          position: "absolute",
+          inset: 0,
+          borderRadius: radius,
+          border: "2px solid rgba(255,255,255,0.10)",
+          overflow: "hidden",
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+        }}
+      >
+        {children}
+      </div>
+      {/* 光束：旋转的 conic 渐变被 mask 只露边缘 */}
+      <svg width={width} height={height} style={{ position: "absolute", inset: 0, pointerEvents: "none" }}>
+        <defs>
+          <mask id={id}>
+            <rect x="4" y="4" width={width - 8} height={height - 8} rx={radius - 4} fill="none" stroke="#fff" strokeWidth="3" />
+          </mask>
+        </defs>
+        <rect
+          x="0"
+          y="0"
+          width={width}
+          height={height}
+          rx={radius}
+          fill="none"
+          stroke="url(#beamgrad)"
+          strokeWidth="6"
+          mask={`url(#${id})`}
+          style={{ transformOrigin: "center" }}
+        />
+        <defs>
+          <linearGradient id="beamgrad" gradientTransform={`rotate(${angle})`}>
+            <stop offset="0%" stopColor="transparent" />
+            <stop offset="80%" stopColor="transparent" />
+            <stop offset="92%" stopColor={color} />
+            <stop offset="100%" stopColor="transparent" />
+          </linearGradient>
+        </defs>
+      </svg>
+    </div>
+  );
+};
+
+const SCRAMBLE_CHARS = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789#@%&";
+
+/** TextScramble：字符"解码"式渐显——每个字符从随机字符池滚动定格，左→右波浪锁定 */
+export const TextScramble: React.FC<{
+  text: string;
+  frame: number;
+  /** 每字符锁定间隔（帧） */
+  stagger?: number;
+  fontSize?: number;
+  color?: string;
+}> = ({ text, frame, stagger = 2.5, fontSize = 96, color = T.fg }) => {
+  const chars = text.split("");
+  return (
+    <div
+      style={{
+        fontFamily: "monospace",
+        fontSize,
+        fontWeight: 900,
+        color,
+        whiteSpace: "pre",
+        letterSpacing: 2,
+      }}
+    >
+      {chars.map((ch, i) => {
+        const lockAt = i * stagger + 8;
+        const locked = frame >= lockAt;
+        // 未锁定时每 4 帧换一个随机字符
+        const rnd = SCRAMBLE_CHARS[Math.floor(frame / 4 + i * 7) % SCRAMBLE_CHARS.length];
+        return (
+          <span key={i} style={{ opacity: frame >= i * stagger ? 1 : 0 }}>
+            {locked ? ch : /[\s]/.test(ch) ? ch : rnd}
+          </span>
+        );
+      })}
+    </div>
+  );
+};
+
+/** SpotlightCard：一道柔光从卡片左侧扫到右侧（进入时单次扫过，非循环） */
+export const SpotlightCard: React.FC<{
+  width: number;
+  height: number;
+  frame: number;
+  enterFrames?: number;
+  title: string;
+  note?: string;
+}> = ({ width, height, frame, enterFrames = 45, title, note }) => {
+  const sweep = interpolate(frame, [0, enterFrames], [-0.4, 1.4], clamp); // 光心位置 0~1，超出后移出画面
+  const lightX = width * sweep;
+  return (
+    <div
+      style={{
+        position: "relative",
+        width,
+        height,
+        borderRadius: 28,
+        backgroundColor: "#10161f",
+        border: "1px solid rgba(255,255,255,0.08)",
+        overflow: "hidden",
+        display: "flex",
+        flexDirection: "column",
+        justifyContent: "center",
+        padding: "0 56px",
+      }}
+    >
+      {/* 扫过的聚光层 */}
+      <div
+        style={{
+          position: "absolute",
+          inset: 0,
+          background: `radial-gradient(420px circle at ${lightX}px 50%, rgba(16,185,129,0.14), transparent 65%)`,
+          opacity: frame < enterFrames + 15 ? 1 : interpolate(frame, [enterFrames + 15, enterFrames + 45], [1, 0.35], clamp),
+        }}
+      />
+      <div
+        style={{
+          fontFamily: "sans-serif",
+          fontSize: 64,
+          fontWeight: 900,
+          color: T.fg,
+          opacity: interpolate(frame, [12, 30], [0, 1], clamp),
+          transform: `translateY(${interpolate(frame, [12, 30], [16, 0], clamp)}px)`,
+        }}
+      >
+        {title}
+      </div>
+      {note ? (
+        <div
+          style={{
+            fontFamily: "sans-serif",
+            fontSize: 26,
+            color: T.sub,
+            marginTop: 14,
+            opacity: interpolate(frame, [24, 42], [0, 1], clamp),
+          }}
+        >
+          {note}
+        </div>
+      ) : null}
+    </div>
+  );
+};
+
+/* ---------- 1. FlowPath 流程路径（伪 3D 纵深） ---------- */
 const FP_W = 1560;
 const FP_H = 760;
 
@@ -347,6 +568,240 @@ export const Counter: React.FC<TemplateProps> = ({ beats, timeline, durationFram
       )}
       {label ? (
         <div style={{ fontFamily: "sans-serif", fontSize: 44, color: T.sub, letterSpacing: 4 }}>{label}</div>
+      ) : null}
+    </div>
+  );
+};
+
+/* ---------- 6. ProgressRing 进度环（占比/完成度） ---------- */
+
+export const ProgressRing: React.FC<{
+  /** 0~1 */
+  ratio: number;
+  frame: number;
+  label: string;
+  size?: number;
+  color?: string;
+  centerText?: string;
+}> = ({ ratio, frame, label, size = 460, color = T.accent, centerText }) => {
+  const r = size * 0.42;
+  const circ = 2 * Math.PI * r;
+  const p = interpolate(frame, [5, 55], [0, 1], { ...clamp, easing: Easing.out(Easing.cubic) });
+  const val = Math.min(1, Math.max(0, ratio));
+  return (
+    <div style={{ display: "flex", alignItems: "center", gap: 56 }}>
+      <svg width={size} height={size} style={{ transform: "rotate(-90deg)" }}>
+        <circle cx={size / 2} cy={size / 2} r={r} fill="none" stroke="rgba(255,255,255,0.08)" strokeWidth={size * 0.055} />
+        <circle
+          cx={size / 2}
+          cy={size / 2}
+          r={r}
+          fill="none"
+          stroke={color}
+          strokeWidth={size * 0.055}
+          strokeLinecap="round"
+          strokeDasharray={circ}
+          strokeDashoffset={circ * (1 - val * p)}
+          style={{ filter: "drop-shadow(0 0 18px rgba(16,185,129,0.45))" }}
+        />
+        <text
+          x="50%"
+          y="50%"
+          textAnchor="middle"
+          dominantBaseline="central"
+          transform={`rotate(90 ${size / 2} ${size / 2})`}
+          fontFamily="sans-serif"
+          fontWeight={900}
+          fontSize={size * 0.2}
+          fill={T.fg}
+        >
+          {centerText ?? `${Math.round(val * 100)}%`}
+        </text>
+      </svg>
+      <div style={{ fontFamily: "sans-serif", fontSize: 42, color: T.sub, maxWidth: 520, lineHeight: 1.4 }}>{label}</div>
+    </div>
+  );
+};
+
+/* ---------- 7. StepTimeline 横向步骤时间轴（顺序/阶段） ---------- */
+
+export const StepTimeline: React.FC<{
+  steps: string[];
+  frame: number;
+  durationFrames?: number;
+  stagger?: number;
+}> = ({ steps, frame, stagger = 10 }) => {
+  const shown = steps.slice(0, 5);
+  return (
+    <div style={{ position: "relative", width: "100%", padding: "40px 20px" }}>
+      {/* 贯穿线：从左向右生长 */}
+      <div
+        style={{
+          position: "absolute",
+          top: "50%",
+          left: 0,
+          height: 6,
+          width: `${interpolate(frame, [0, 20], [0, 100], clamp)}%`,
+          background: "linear-gradient(90deg, rgba(16,185,129,0.15), rgba(16,185,129,0.7))",
+          borderRadius: 3,
+        }}
+      />
+      <div style={{ display: "flex", justifyContent: "space-between" }}>
+        {shown.map((s, i) => {
+          const at = 8 + i * stagger;
+          const pop = interpolate(frame, [at, at + 16], [0, 1], { ...clamp, easing: Easing.out(Easing.back(1.6)) });
+          const isLast = i === shown.length - 1;
+          return (
+            <div
+              key={i}
+              style={{
+                display: "flex",
+                flexDirection: "column",
+                alignItems: "center",
+                gap: 18,
+                opacity: pop,
+                transform: `translateY(${(1 - pop) * 26}px) scale(${(0.8 + pop * 0.2).toFixed(3)})`,
+              }}
+            >
+              <div
+                style={{
+                  width: isLast ? 84 : 64,
+                  height: isLast ? 84 : 64,
+                  borderRadius: "50%",
+                  backgroundColor: isLast ? T.accent : C.panel2,
+                  border: `4px solid ${isLast ? T.accent : "rgba(16,185,129,0.5)"}`,
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  fontFamily: "monospace",
+                  fontSize: isLast ? 36 : 30,
+                  fontWeight: 800,
+                  color: isLast ? "#022c22" : T.accent,
+                  boxShadow: isLast ? "0 0 42px rgba(16,185,129,0.5)" : "none",
+                }}
+              >
+                {i + 1}
+              </div>
+              <div
+                style={{
+                  fontFamily: "sans-serif",
+                  fontSize: 34,
+                  fontWeight: 700,
+                  color: isLast ? T.fg : C.sub,
+                  textAlign: "center",
+                  maxWidth: 280,
+                }}
+              >
+                {s.slice(0, 10)}
+              </div>
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+};
+
+/* ---------- 8. StatGrid 多数字网格（财报/数据面板） ---------- */
+
+export const StatGrid: React.FC<{
+  stats: { label: string; value: string; delta?: string }[];
+  frame: number;
+  stagger?: number;
+}> = ({ stats, frame, stagger = 9 }) => {
+  const shown = stats.slice(0, 4);
+  const cols = shown.length <= 2 ? shown.length : 2;
+  return (
+    <div
+      style={{
+        display: "grid",
+        gridTemplateColumns: `repeat(${cols}, 1fr)`,
+        gap: 28,
+        width: "100%",
+      }}
+    >
+      {shown.map((s, i) => {
+        const at = 6 + i * stagger;
+        const enter = interpolate(frame, [at, at + 16], [0, 1], { ...clamp, easing: Easing.out(Easing.cubic) });
+        return (
+          <div
+            key={i}
+            style={{
+              borderRadius: 26,
+              backgroundColor: "#10161f",
+              border: "1px solid rgba(255,255,255,0.09)",
+              padding: "36px 40px",
+              opacity: enter,
+              transform: `translateY(${((1 - enter) * 30).toFixed(1)}px)`,
+            }}
+          >
+            <div style={{ fontFamily: "sans-serif", fontSize: 30, color: T.sub }}>{s.label.slice(0, 14)}</div>
+            <div style={{ fontFamily: "sans-serif", fontSize: 76, fontWeight: 900, color: T.fg, marginTop: 10, fontVariantNumeric: "tabular-nums" }}>
+              {s.value.slice(0, 12)}
+            </div>
+            {s.delta ? (
+              <div style={{ fontFamily: "sans-serif", fontSize: 30, color: T.accent, marginTop: 8, fontWeight: 700 }}>{s.delta.slice(0, 16)}</div>
+            ) : null}
+          </div>
+        );
+      })}
+    </div>
+  );
+};
+
+/* ---------- 9. QuoteCard 金句卡（观点/结论/引用） ---------- */
+
+export const QuoteCard: React.FC<{
+  quote: string;
+  author?: string;
+  frame: number;
+  enterFrames?: number;
+}> = ({ quote, author, frame, enterFrames = 40 }) => {
+  const rise = interpolate(frame, [4, enterFrames], [40, 0], { ...clamp, easing: Easing.out(Easing.cubic) });
+  const fade = interpolate(frame, [4, enterFrames * 0.7], [0, 1], clamp);
+  // 引导线从左下角生长
+  const lineGrow = interpolate(frame, [enterFrames * 0.6, enterFrames * 1.4], [0, 1], clamp);
+  return (
+    <div style={{ position: "relative", width: "100%", padding: "0 80px", opacity: fade, transform: `translateY(${rise}px)` }}>
+      {/* 巨型引号装饰 */}
+      <div
+        style={{
+          position: "absolute",
+          top: -60,
+          left: 20,
+          fontFamily: "Georgia, serif",
+          fontSize: 220,
+          color: "rgba(16,185,129,0.18)",
+          lineHeight: 1,
+          userSelect: "none",
+        }}
+      >
+        “
+      </div>
+      <div
+        style={{
+          fontFamily: "sans-serif",
+          fontSize: 58,
+          fontWeight: 800,
+          color: T.fg,
+          lineHeight: 1.5,
+          textAlign: "left",
+        }}
+      >
+        {quote.slice(0, 44)}
+      </div>
+      {author ? (
+        <div
+          style={{
+            marginTop: 28,
+            display: "flex",
+            alignItems: "center",
+            gap: 20,
+          }}
+        >
+          <div style={{ width: 90 * lineGrow, height: 5, backgroundColor: T.accent, borderRadius: 3 }} />
+          <span style={{ fontFamily: "sans-serif", fontSize: 32, color: T.sub }}>{author.slice(0, 20)}</span>
+        </div>
       ) : null}
     </div>
   );

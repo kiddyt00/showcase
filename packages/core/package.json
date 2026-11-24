@@ -9,6 +9,7 @@
     "./store": "./src/store.ts",
     "./agent": "./src/agent.ts",
     "./agent-tools": "./src/agent-tools.ts",
+    "./analyze-queue": "./src/analyze-queue.ts",
     "./analyzers": "./src/analyzers/index.ts",
     "./diagrams": "./src/diagrams.ts",
     "./redact": "./src/redact.ts",
@@ -18,6 +19,8 @@
     "./deepseek": "./src/deepseek.ts",
     "./video/pipeline": "./src/video/pipeline.ts",
     "./video/queue": "./src/video/queue.ts",
+    "./video/hyperframes": "./src/video/hyperframes.ts",
+    "./video/stock": "./src/video/stock.ts",
     "./video/script": "./src/video/script.ts",
     "./video/tts": "./src/video/tts.ts",
     "./video/types": "./src/video/types.ts"

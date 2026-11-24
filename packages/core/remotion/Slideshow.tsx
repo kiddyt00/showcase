@@ -1,6 +1,7 @@
 import { AbsoluteFill, Audio, Img, OffthreadVideo, Sequence, interpolate, staticFile, useCurrentFrame, useVideoConfig } from "remotion";
 import { DIMENSIONS, Orientation, Scene } from "../src/video/types";
-import { FlowPath, StackBoxes, TerminalSim, Counter as CounterElement, CompareBars } from "./elements";
+import { FlowPath, StackBoxes, TerminalSim, Counter as CounterElement, CompareBars, SpringCounter, BorderBeam, TextScramble, SpotlightCard } from "./elements";
+import { StoryboardView } from "./storyboard";
 
 export interface SlideshowProps {
   title: string;
@@ -10,6 +11,8 @@ export interface SlideshowProps {
   scenes: Scene[];
   /** 页面 slug：片尾卡显示短码 */
   slug?: string;
+  /** 可选：背景音乐（public 相对路径），低音量循环铺底 */
+  bgmFile?: string;
 }
 
 const T = { bg: "#0b0f0e", fg: "#f4f4f5", accent: "#10b981", sub: "#a1a1aa" };
@@ -233,7 +236,7 @@ const CounterRoll: React.FC<{
   );
 };
 
-const Slideshow: React.FC<SlideshowProps> = ({ title, icon, tags, scenes, slug }) => {
+const Slideshow: React.FC<SlideshowProps> = ({ title, icon, tags, scenes, slug, bgmFile }) => {
   const frame = useCurrentFrame();
   const { fps } = useVideoConfig();
   // 图标可能是外部 URL，也可能是 public 内的本地路径
@@ -293,6 +296,8 @@ const Slideshow: React.FC<SlideshowProps> = ({ title, icon, tags, scenes, slug }
       tplVisual === "stepflow" || tplVisual === "stacklayers");
   // 幻灯片模式画面：slideFile 存在时全屏铺满（cover），整段场景轻微 Ken Burns 1.0 → 1.04
   const hasSlide = !!scene.slideFile;
+  // v5 分镜：storyboard 存在时接管整个场景画面（背景+层栈），仅保留字幕/进度条/音频
+  const hasStoryboard = !isIntro && !isEndCard && !!scene.storyboard;
   const kbSlide = hasSlide
     ? interpolate(local, [0, dur], [1.0, 1.04], { extrapolateLeft: "clamp", extrapolateRight: "clamp" })
     : 1;
@@ -337,6 +342,42 @@ const Slideshow: React.FC<SlideshowProps> = ({ title, icon, tags, scenes, slug }
         ) : null
       )}
 
+      {/* 背景音乐：低音量循环铺底（用户放置 public/videos/bgm.mp3 时启用） */}
+      {bgmFile ? <Audio loop src={staticFile(bgmFile)} volume={0.08} /> : null}
+
+      {/* 开场/片尾空镜背景：免费实拍素材全屏铺满 + 暗化压底（pipeline 自动匹配） */}
+      {(isIntro || isEndCard) && (scene.videoFile || scene.imageFile) ? (
+        <>
+          <AbsoluteFill style={{ overflow: "hidden" }}>
+            {scene.videoFile ? (
+              <OffthreadVideo
+                src={staticFile(scene.videoFile)}
+                muted
+                style={{ width: "100%", height: "100%", objectFit: "cover", opacity: inAnim }}
+              />
+            ) : (
+              <Img
+                src={staticFile(scene.imageFile!)}
+                style={{
+                  width: "100%",
+                  height: "100%",
+                  objectFit: "cover",
+                  opacity: inAnim,
+                  transform: `scale(${interpolate(local, [0, dur], [1.0, 1.06], { extrapolateLeft: "clamp", extrapolateRight: "clamp" })})`,
+                }}
+              />
+            )}
+          </AbsoluteFill>
+          {/* 暗化遮罩：保证标题可读 */}
+          <AbsoluteFill style={{ backgroundColor: "rgba(11,15,14,0.74)" }} />
+        </>
+      ) : null}
+
+      {/* v5 分镜：LLM 设计的原语组合接管场景画面（字幕/进度条/音频仍保留） */}
+      {hasStoryboard ? (
+        <StoryboardView scene={scene} frame={local} fps={fps} durationFrames={dur} />
+      ) : null}
+
       {/* 幻灯片模式：截图全屏铺满 + 底部渐变压边 + Ken Burns，替代默认布局（narration/字幕/进度条仍保留） */}
       {hasSlide ? (
         <AbsoluteFill style={{ overflow: "hidden" }}>
@@ -368,7 +409,7 @@ const Slideshow: React.FC<SlideshowProps> = ({ title, icon, tags, scenes, slug }
           padding: "8%",
           opacity: outAnim,
           transform: `translateX(${slideX + outSlideX}px)`,
-          display: hasSlide ? "none" : "flex",
+          display: hasSlide || hasStoryboard ? "none" : "flex",
         }}
       >
         {/* 场景进度点 */}
@@ -480,7 +521,18 @@ const Slideshow: React.FC<SlideshowProps> = ({ title, icon, tags, scenes, slug }
               ) : tplVisual === "terminal" ? (
                 <TerminalSim beats={scene.beats ?? []} timeline={scene.timeline ?? []} durationFrames={dur} fps={fps} frame={local} />
               ) : tplVisual === "counter" ? (
-                <CounterElement beats={scene.beats ?? []} timeline={scene.timeline ?? []} durationFrames={dur} fps={fps} frame={local} />
+                scene.counter ? (
+                  /* Spring 升级版：物理弹簧过冲数字（无 counter 数据时退回 v4 匀速版） */
+                  <SpringCounter
+                    value={scene.counter.value}
+                    frame={local}
+                    durationFrames={Math.min(dur - 10, 60)}
+                    label={scene.counter.label}
+                    suffix={scene.counter.suffix}
+                  />
+                ) : (
+                  <CounterElement beats={scene.beats ?? []} timeline={scene.timeline ?? []} durationFrames={dur} fps={fps} frame={local} />
+                )
               ) : (
                 <CompareBars beats={scene.beats ?? []} timeline={scene.timeline ?? []} durationFrames={dur} fps={fps} frame={local} />
               )}

@@ -3,8 +3,6 @@
  * Agent 作为"页面管理者"，通过这些结构化工具操作网页的各个元素。
  * 每个工具执行后返回操作结果（含更新后的页面状态摘要），供 Agent 继续推理。
  */
-import { runAnalysis } from "./agent";
-import { startRender } from "./video/queue";
 import { renderDiagram } from "./diagrams";
 import {
   savePage,
@@ -15,6 +13,7 @@ import {
   uniqueSlugify,
 } from "./store";
 import type { PageContent, Section } from "./types";
+import type { VideoMode } from "./video/types";
 
 export interface ToolDef {
   type: "function";
@@ -49,6 +48,22 @@ export const TOOLS: ToolDef[] = [
           },
         },
         required: ["input"],
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "render_video",
+      description:
+        "为当前页面渲染解说视频。engine 可选：remotion（默认，动画模板+空镜）/ hyperframes（HTML+GSAP 引擎，渲染更快体积更小）。orientation 可选 landscape（横版）或 portrait（竖版）。",
+      parameters: {
+        type: "object",
+        properties: {
+          slug: { type: "string", description: "可选，目标页面 slug，默认当前页面" },
+          engine: { type: "string", description: "remotion | hyperframes，默认 remotion" },
+          orientation: { type: "string", description: "landscape | portrait，默认 landscape" },
+        },
       },
     },
   },
@@ -207,29 +222,33 @@ export async function executeTool(
 ): Promise<{ result: string; currentSlug?: string; page?: PageContent }> {
   switch (name) {
     case "analyze_source": {
-      const { page } = await runAnalysis({
-        input: String(args.input),
-        sourceType: args.sourceType as string | undefined,
-      });
-      savePage(page);
-      // 自动排队解说视频渲染（横版+竖版）。渲染队列一次只跑一个，
-      // 另一个需持续重试直到排上（横版渲染约 3 分钟，重试窗口给足 10 分钟）
-      void (async () => {
-        for (const o of ["landscape", "portrait"] as const) {
-          let started = false;
-          for (let attempt = 0; attempt < 40 && !started; attempt++) {
-            const r = await startRender(page.slug, o);
-            if (r === "started") started = true;
-            else if (r === "busy") await new Promise((r2) => setTimeout(r2, 15_000));
-            else break; // not-found 等不可恢复错误
-          }
-        }
-      })().catch(() => {});
+      // 异步任务化：立即返回 jobId，前端轮询进度；避免长请求阻塞对话
+      const { submitAnalyzeJob } = await import("./analyze-queue");
+      const job = submitAnalyzeJob(String(args.input), args.sourceType as string | undefined, ctx.sessionId);
       return {
-        result: `已分析并创建页面。slug=${page.slug}，标题="${page.title}"，分类=${page.category}，章节数=${page.sections.length}。解说视频已在后台自动生成，稍后可在详情页查看。已设为当前管理页面。`,
-        currentSlug: page.slug,
-        page,
+        result: `分析任务已提交并在后台执行（jobId=${job.id}）。流程：抓取素材 → AI 分析 → 渲染图表 → 自动发布，通常需要 2~5 分钟。前端会实时显示进度，完成后页面自动出现。请告诉用户正在后台分析、稍等片刻，不要重复提交。`,
       };
+    }
+
+    case "render_video": {
+      const slug = (args.slug as string) ?? ctx.currentSlug;
+      const page = requirePage(slug);
+      // remotion → standard（Remotion 动画模板）；hyperframes → hyperframes 引擎
+      const mode: VideoMode = args.engine === "hyperframes" ? "hyperframes" : "standard";
+      const orientation = args.orientation === "portrait" ? "portrait" : "landscape";
+      // 排队渲染（异步），立即返回任务状态
+      const { startRender } = await import("./video/queue");
+      const r = await startRender(page.slug, orientation, mode);
+      const engineName = mode === "hyperframes" ? "HyperFrames" : "Remotion";
+      const msg =
+        r === "started"
+          ? `已开始渲染 ${engineName} 版${orientation === "portrait" ? "竖版" : "横版"}视频（页面 ${page.slug}），约 1~8 分钟完成，完成后自动出现在详情页。`
+          : r === "exists"
+            ? `页面 ${page.slug} 的该版本视频已在渲染中或已完成，无需重复发起。`
+            : r === "busy"
+              ? "渲染队列繁忙（已有任务在渲染），请稍后重试。"
+              : "页面不存在。";
+      return { result: msg, currentSlug: page.slug };
     }
 
     case "update_page": {

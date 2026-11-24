@@ -1,6 +1,6 @@
-/** Agent 分析接口：POST /api/analyze */
-import { runAnalysis } from "@showcase/core/agent";
-import { savePage } from "@showcase/core/store";
+/** 分析任务接口：POST 提交（异步，立即返回任务 ID），GET 查询状态 */
+import { submitAnalyzeJob, sweepStaleAnalyzeJobs } from "@showcase/core/analyze-queue";
+import { getAnalyzeJob, listAnalyzeJobs } from "@showcase/core/store";
 import { AnalyzeRequest } from "@showcase/core/types";
 import { NextRequest } from "next/server";
 import { rateLimit, clientKey } from "@showcase/core/auth";
@@ -11,29 +11,37 @@ export async function POST(request: NextRequest) {
   if (isPublicMode()) return publicNotFound();
   const limited = rateLimit(`analyze:${clientKey(request)}`, 10, 60_000);
   if (limited) return limited;
-  let body: AnalyzeRequest;
+  let body: AnalyzeRequest & { sessionId?: string };
   try {
-    body = (await request.json()) as AnalyzeRequest;
+    body = (await request.json()) as AnalyzeRequest & { sessionId?: string };
   } catch {
     return Response.json({ error: "请求体必须是 JSON" }, { status: 400 });
   }
   if (!body.input?.trim()) {
     return Response.json({ error: "缺少 input 字段" }, { status: 400 });
   }
-  try {
-    const { page } = await runAnalysis(body);
-    await savePage(page);
+
+  const job = submitAnalyzeJob(body.input.trim(), body.sourceType, body.sessionId);
+  return Response.json({ ok: true, jobId: job.id, job });
+}
+
+export async function GET(request: NextRequest) {
+  // public 模式：状态查询也属于能力面
+  if (isPublicMode()) return publicNotFound();
+  sweepStaleAnalyzeJobs();
+
+  const id = request.nextUrl.searchParams.get("id");
+  if (id) {
+    const job = getAnalyzeJob(id);
+    if (!job) return Response.json({ error: "任务不存在" }, { status: 404 });
     return Response.json({
       ok: true,
-      slug: page.slug,
-      url: `/show/${page.slug}`,
-      page,
+      job,
+      url: job.slug ? `/show/${job.slug}` : null,
     });
-  } catch (err) {
-    console.error("[analyze] 分析失败:", err);
-    return Response.json(
-      { error: "分析失败，请稍后重试或更换输入内容" },
-      { status: 500 }
-    );
   }
+
+  const sessionId = request.nextUrl.searchParams.get("sessionId");
+  const jobs = listAnalyzeJobs(sessionId ?? undefined, 20);
+  return Response.json({ ok: true, jobs });
 }

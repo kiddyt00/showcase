@@ -1,5 +1,6 @@
 /** 视频任务：POST 发起渲染（异步），GET 查询状态 */
 import { renderVideo } from "@showcase/core/video/pipeline";
+import { renderVideoHyperframes } from "@showcase/core/video/hyperframes";
 import {
   acquireRenderSlot,
   releaseRenderSlot,
@@ -32,18 +33,19 @@ export async function POST(request: NextRequest) {
   }
   const orientation: Orientation =
     body?.orientation === "portrait" ? "portrait" : "landscape";
-  const mode: VideoMode = body?.mode === "slides" ? "slides" : "standard";
+  const mode: VideoMode =
+    body?.mode === "slides" || body?.mode === "hyperframes" ? body.mode : "standard";
   if (!slug) return Response.json({ error: "缺少 slug" }, { status: 400 });
   if (!getPage(slug)) {
     return Response.json({ error: "页面不存在" }, { status: 404 });
   }
 
-  // 惰性清理：把超过 15 分钟仍处于 rendering 的僵死任务置为 failed
+  // 惰性清理：把超过时限仍处于 rendering 的僵死任务置为 failed
   sweepStaleRenderingJobs();
 
-  // 幂等：渲染中或已完成直接返回（slides 模式产物独立命名，done 不拦截以便补产幻灯片版）
+  // 幂等：渲染中或已完成直接返回（slides/hyperframes 产物独立命名，done 不拦截以便补产）
   const existing = getVideoJob(slug, orientation);
-  if (existing && (existing.status === "rendering" || (existing.status === "done" && mode !== "slides"))) {
+  if (existing && (existing.status === "rendering" || (existing.status === "done" && mode === "standard"))) {
     return Response.json({ ok: true, job: existing });
   }
 
@@ -63,10 +65,12 @@ export async function POST(request: NextRequest) {
   };
   upsertVideoJob(job);
 
-  // 后台执行（进程内异步任务）
-  renderVideo(slug, orientation, (percent) =>
-    setVideoJobProgress(slug, orientation, percent), mode
-  )
+  // 后台执行（进程内异步任务）：hyperframes 模式走独立管线，其余走 Remotion
+  const pipeline =
+    mode === "hyperframes"
+      ? renderVideoHyperframes(slug, orientation, (p) => setVideoJobProgress(slug, orientation, p))
+      : renderVideo(slug, orientation, (percent) => setVideoJobProgress(slug, orientation, percent), mode);
+  pipeline
     .then(({ path, scenes }) => {
       upsertVideoJob({ ...job, status: "done", progress: 100, videoPath: path, scenes });
     })

@@ -51,6 +51,7 @@ export function sweepStaleRenderingJobs(): void {
 
 /* ---------- 统一入队：内容创建后自动渲染 ---------- */
 import { renderVideo } from "./pipeline";
+import { renderVideoHyperframes } from "./hyperframes";
 
 export type StartRenderResult = "started" | "exists" | "busy" | "not-found";
 
@@ -65,8 +66,8 @@ export async function startRender(
 ): Promise<StartRenderResult> {
   sweepStaleRenderingJobs();
   const existing = getVideoJob(slug, orientation);
-  // 幂等：渲染中或已完成直接返回（slides 模式产物与标准版不同名，done 不拦截以便补产幻灯片版）
-  if (existing && (existing.status === "rendering" || (existing.status === "done" && mode !== "slides"))) {
+  // 幂等：渲染中或已完成直接返回（slides/hyperframes 产物与标准版不同名，done 不拦截以便补产）
+  if (existing && (existing.status === "rendering" || (existing.status === "done" && mode === "standard"))) {
     return "exists";
   }
   if (!getPage(slug)) return "not-found";
@@ -80,9 +81,11 @@ export async function startRender(
     createdAt: new Date().toISOString(),
   };
   upsertVideoJob(job);
-  renderVideo(slug, orientation, (percent) =>
-    setVideoJobProgress(slug, orientation, percent), mode
-  )
+  const pipeline =
+    mode === "hyperframes"
+      ? renderVideoHyperframes(slug, orientation, (p) => setVideoJobProgress(slug, orientation, p))
+      : renderVideo(slug, orientation, (percent) => setVideoJobProgress(slug, orientation, percent), mode);
+  pipeline
     .then(({ path, scenes }) => {
       upsertVideoJob({ ...job, status: "done", progress: 100, videoPath: path, scenes });
     })

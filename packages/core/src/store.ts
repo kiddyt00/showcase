@@ -55,6 +55,21 @@ const db =
         created_at TEXT NOT NULL,
         PRIMARY KEY (slug, orientation)
       );
+      CREATE TABLE IF NOT EXISTS analyze_jobs (
+        id TEXT PRIMARY KEY,
+        session_id TEXT,
+        input TEXT NOT NULL,
+        source_type TEXT,
+        status TEXT NOT NULL DEFAULT 'queued',
+        stage TEXT,
+        progress REAL NOT NULL DEFAULT 0,
+        error TEXT,
+        slug TEXT,
+        created_at TEXT NOT NULL,
+        started_at TEXT,
+        finished_at TEXT
+      );
+      CREATE INDEX IF NOT EXISTS idx_analyze_session ON analyze_jobs(session_id, created_at DESC);
     `);
     return d;
   })();
@@ -320,6 +335,120 @@ export function getVideoJob(slug: string, orientation: Orientation): VideoJob | 
   };
 }
 
+/* ---------- 分析任务 ---------- */
+
+export type AnalyzeStatus = "queued" | "running" | "done" | "failed";
+
+export interface AnalyzeJob {
+  id: string;
+  sessionId?: string;
+  input: string;
+  sourceType?: string;
+  status: AnalyzeStatus;
+  /** 当前阶段描述：排队中 / 抓取素材 / AI 分析生成中 / 渲染图表 / 发布 */
+  stage?: string;
+  /** 0~100 */
+  progress: number;
+  error?: string;
+  /** 成功时生成的页面 slug */
+  slug?: string;
+  createdAt: string;
+  startedAt?: string;
+  finishedAt?: string;
+}
+
+type AnalyzeJobRow = {
+  id: string;
+  session_id: string | null;
+  input: string;
+  source_type: string | null;
+  status: string;
+  stage: string | null;
+  progress: number | null;
+  error: string | null;
+  slug: string | null;
+  created_at: string;
+  started_at: string | null;
+  finished_at: string | null;
+};
+
+function rowToAnalyzeJob(row: AnalyzeJobRow): AnalyzeJob {
+  return {
+    id: row.id,
+    sessionId: row.session_id ?? undefined,
+    input: row.input,
+    sourceType: row.source_type ?? undefined,
+    status: row.status as AnalyzeStatus,
+    stage: row.stage ?? undefined,
+    progress: row.progress ?? 0,
+    error: row.error ?? undefined,
+    slug: row.slug ?? undefined,
+    createdAt: row.created_at,
+    startedAt: row.started_at ?? undefined,
+    finishedAt: row.finished_at ?? undefined,
+  };
+}
+
+export function insertAnalyzeJob(job: AnalyzeJob): void {
+  db.prepare(
+    `INSERT INTO analyze_jobs (id,session_id,input,source_type,status,stage,progress,error,slug,created_at,started_at,finished_at)
+     VALUES (@id,@sessionId,@input,@sourceType,@status,@stage,@progress,@error,@slug,@createdAt,@startedAt,@finishedAt)`
+  ).run({
+    id: job.id,
+    sessionId: job.sessionId ?? null,
+    input: job.input,
+    sourceType: job.sourceType ?? null,
+    status: job.status,
+    stage: job.stage ?? null,
+    progress: job.progress,
+    error: job.error ?? null,
+    slug: job.slug ?? null,
+    createdAt: job.createdAt,
+    startedAt: job.startedAt ?? null,
+    finishedAt: job.finishedAt ?? null,
+  });
+}
+
+/** 部分字段更新（只写传入的字段） */
+export function updateAnalyzeJob(
+  id: string,
+  patch: Partial<Pick<AnalyzeJob, "status" | "stage" | "progress" | "error" | "slug" | "startedAt" | "finishedAt">>
+): void {
+  const sets: string[] = [];
+  const params: Record<string, unknown> = { id };
+  if (patch.status !== undefined) { sets.push("status=@status"); params.status = patch.status; }
+  if (patch.stage !== undefined) { sets.push("stage=@stage"); params.stage = patch.stage; }
+  if (patch.progress !== undefined) { sets.push("progress=@progress"); params.progress = patch.progress; }
+  if (patch.error !== undefined) { sets.push("error=@error"); params.error = patch.error ?? null; }
+  if (patch.slug !== undefined) { sets.push("slug=@slug"); params.slug = patch.slug ?? null; }
+  if (patch.startedAt !== undefined) { sets.push("started_at=@startedAt"); params.startedAt = patch.startedAt ?? null; }
+  if (patch.finishedAt !== undefined) { sets.push("finished_at=@finishedAt"); params.finishedAt = patch.finishedAt ?? null; }
+  if (!sets.length) return;
+  db.prepare(`UPDATE analyze_jobs SET ${sets.join(", ")} WHERE id = @id`).run(params);
+}
+
+export function getAnalyzeJob(id: string): AnalyzeJob | null {
+  const row = db.prepare(`SELECT * FROM analyze_jobs WHERE id = ?`).get(id) as AnalyzeJobRow | undefined;
+  return row ? rowToAnalyzeJob(row) : null;
+}
+
+export function listAnalyzeJobs(sessionId?: string, limit = 20): AnalyzeJob[] {
+  const rows = (
+    sessionId
+      ? db.prepare(`SELECT * FROM analyze_jobs WHERE session_id = ? ORDER BY created_at DESC LIMIT ?`).all(sessionId, limit)
+      : db.prepare(`SELECT * FROM analyze_jobs ORDER BY created_at DESC LIMIT ?`).all(limit)
+  ) as AnalyzeJobRow[];
+  return rows.map(rowToAnalyzeJob);
+}
+
+/** 取最早的排队中任务（用于进程内调度器取活） */
+export function nextQueuedAnalyzeJob(): AnalyzeJob | null {
+  const row = db
+    .prepare(`SELECT * FROM analyze_jobs WHERE status = 'queued' ORDER BY created_at ASC LIMIT 1`)
+    .get() as AnalyzeJobRow | undefined;
+  return row ? rowToAnalyzeJob(row) : null;
+}
+
 /* ---------- 对话会话 ---------- */
 
 export interface ChatMessageRow {
@@ -349,6 +478,37 @@ export function getChatHistory(sessionId: string, limit = 40): ChatMessageRow[] 
     role: r.role as ChatMessageRow["role"],
     content: r.content,
     pageSlug: r.page_slug ?? undefined,
+  }));
+}
+
+export interface ChatSessionRow {
+  sessionId: string;
+  /** 会话名：首个用户消息（截断） */
+  title: string;
+  lastAt: string;
+  msgs: number;
+  /** 会话最近一次管理的页面 slug（回溯"哪次会话产出了哪篇文章"） */
+  lastSlug?: string;
+}
+
+/** 会话列表：以首个用户消息命名，按最后活跃排序 */
+export function listChatSessions(limit = 20): ChatSessionRow[] {
+  const rows = db
+    .prepare(
+      `SELECT m.session_id AS sessionId,
+        (SELECT content FROM chat_messages x WHERE x.session_id = m.session_id AND x.role = 'user' ORDER BY x.id ASC LIMIT 1) AS title,
+        MAX(m.created_at) AS lastAt,
+        COUNT(*) AS msgs,
+        (SELECT page_slug FROM chat_messages y WHERE y.session_id = m.session_id AND y.page_slug IS NOT NULL ORDER BY y.id DESC LIMIT 1) AS lastSlug
+      FROM chat_messages m GROUP BY m.session_id ORDER BY lastAt DESC LIMIT ?`
+    )
+    .all(limit) as { sessionId: string; title: string | null; lastAt: string; msgs: number; lastSlug: string | null }[];
+  return rows.map((r) => ({
+    sessionId: r.sessionId,
+    title: (r.title ?? "（无用户消息）").slice(0, 40),
+    lastAt: r.lastAt,
+    msgs: r.msgs,
+    lastSlug: r.lastSlug ?? undefined,
   }));
 }
 

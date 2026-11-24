@@ -1,0 +1,82 @@
+{
+  "version": 1,
+  "historyId": "bd20edc0-be76-4821-96ea-d5c08597e77c",
+  "currentRevision": null,
+  "pendingChanges": false,
+  "files": {
+    "gen.cjs": {
+      "hash": "d701d4faf4016860f72c16cd5e6fdf02100081cd2ff09f26d7962347574b8571",
+      "content": "C:\\Users\\morefine\\.cache\\hyperframes\\history\\bd20edc0-be76-4821-96ea-d5c08597e77c\\blobs\\d7\\d701d4faf4016860f72c16cd5e6fdf02100081cd2ff09f26d7962347574b8571"
+    },
+    "index.html": {
+      "hash": "a63fde7919c81ad0c7ead71f7ed31b0a3f7e72fbc032f1df4efc5247e0ab2659",
+      "content": "C:\\Users\\morefine\\.cache\\hyperframes\\history\\bd20edc0-be76-4821-96ea-d5c08597e77c\\blobs\\a6\\a63fde7919c81ad0c7ead71f7ed31b0a3f7e72fbc032f1df4efc5247e0ab2659"
+    },
+    "package-lock.json": {
+      "hash": "ca2038886a84da050601b190d4ab11c505e186f8a052c7ee7f6cfba3fb02f8a1",
+      "content": "C:\\Users\\morefine\\.cache\\hyperframes\\history\\bd20edc0-be76-4821-96ea-d5c08597e77c\\blobs\\ca\\ca2038886a84da050601b190d4ab11c505e186f8a052c7ee7f6cfba3fb02f8a1"
+    },
+    "package.json": {
+      "hash": "3e730c94c6f03125360281520eddaf0fc7ea95cf85648dcdf90bf0f983f187fb",
+      "content": "C:\\Users\\morefine\\.cache\\hyperframes\\history\\bd20edc0-be76-4821-96ea-d5c08597e77c\\blobs\\3e\\3e730c94c6f03125360281520eddaf0fc7ea95cf85648dcdf90bf0f983f187fb"
+    },
+    "scene-0.mp3": {
+      "hash": "5befae415e835373671575c029162efedbec94ce5ff7d61b09271dcc250d8d1f",
+      "content": "C:\\Users\\morefine\\.cache\\hyperframes\\history\\bd20edc0-be76-4821-96ea-d5c08597e77c\\blobs\\5b\\5befae415e835373671575c029162efedbec94ce5ff7d61b09271dcc250d8d1f"
+    },
+    "scene-1.mp3": {
+      "hash": "b2aabd938eddb10d4bf800ead68ee0ba868c635ab0eecb367fa70db427492839",
+      "content": "C:\\Users\\morefine\\.cache\\hyperframes\\history\\bd20edc0-be76-4821-96ea-d5c08597e77c\\blobs\\b2\\b2aabd938eddb10d4bf800ead68ee0ba868c635ab0eecb367fa70db427492839"
+    },
+    "scene-2.mp3": {
+      "hash": "13fe7b3f5a6ab57e83ea1b9d775e7ea19ea40b30c7f33052e072652ec978d7a4",
+      "content": "C:\\Users\\morefine\\.cache\\hyperframes\\history\\bd20edc0-be76-4821-96ea-d5c08597e77c\\blobs\\13\\13fe7b3f5a6ab57e83ea1b9d775e7ea19ea40b30c7f33052e072652ec978d7a4"
+    },
+    "scene-3.mp3": {
+      "hash": "9e929e7293bf09f088eff2250d08a4a67bc6e538b7fdcc41d358cdafa03a7cfc",
+      "content": "C:\\Users\\morefine\\.cache\\hyperframes\\history\\bd20edc0-be76-4821-96ea-d5c08597e77c\\blobs\\9e\\9e929e7293bf09f088eff2250d08a4a67bc6e538b7fdcc41d358cdafa03a7cfc"
+    },
+    "scene-4.mp3": {
+      "hash": "622eeebebe27fc09092b972e13a173dd8aa3f971cf2d2a3c2ce92deef058afde",
+      "content": "C:\\Users\\morefine\\.cache\\hyperframes\\history\\bd20edc0-be76-4821-96ea-d5c08597e77c\\blobs\\62\\622eeebebe27fc09092b972e13a173dd8aa3f971cf2d2a3c2ce92deef058afde"
+    },
+    "scene-5.mp3": {
+      "hash": "f4087956d301fa775d977a3fb94c76dabb2b1460783570567617f48adc95d4af",
+      "content": "C:\\Users\\morefine\\.cache\\hyperframes\\history\\bd20edc0-be76-4821-96ea-d5c08597e77c\\blobs\\f4\\f4087956d301fa775d977a3fb94c76dabb2b1460783570567617f48adc95d4af"
+    },
+    "scene-6.mp3": {
+      "hash": "107ba2bafea03dd04ba95ef1fb92475b86e59a0458be13adc3e55288a84820ee",
+      "content": "C:\\Users\\morefine\\.cache\\hyperframes\\history\\bd20edc0-be76-4821-96ea-d5c08597e77c\\blobs\\10\\107ba2bafea03dd04ba95ef1fb92475b86e59a0458be13adc3e55288a84820ee"
+    },
+    "storyboard-full.json": {
+      "hash": "ae0e6b6aa21f11cef25b6344fefe6dcdac42a80cab65ab1bd91ec4b3eaaff2ad",
+      "content": "C:\\Users\\morefine\\.cache\\hyperframes\\history\\bd20edc0-be76-4821-96ea-d5c08597e77c\\blobs\\ae\\ae0e6b6aa21f11cef25b6344fefe6dcdac42a80cab65ab1bd91ec4b3eaaff2ad"
+    },
+    "stock-0.mp4": {
+      "hash": "a357ebe2b860290206a89064cd879b36af10d86798e5d595d93c297d11cd9447",
+      "content": "C:\\Users\\morefine\\.cache\\hyperframes\\history\\bd20edc0-be76-4821-96ea-d5c08597e77c\\blobs\\a3\\a357ebe2b860290206a89064cd879b36af10d86798e5d595d93c297d11cd9447"
+    }
+  },
+  "revisions": {},
+  "checks": {
+    "latest": null,
+    "revisions": {},
+    "unversioned": []
+  },
+  "snapshots": {
+    "latest": null,
+    "revisions": {},
+    "unversioned": []
+  },
+  "renders": {
+    "latest": {
+      "id": "e0a33a69-c9f6-465a-9ea1-73644411ae73",
+      "completedAt": 1795548458951,
+      "output": "E:\\dsh\\showcase\\ab-test\\hyperframes\\nvidia-hyperframes.mp4",
+      "status": "completed",
+      "revision": null
+    },
+    "retainedRevisions": []
+  },
+  "pendingArtifactCleanup": []
+}
