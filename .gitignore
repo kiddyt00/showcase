@@ -45,3 +45,7 @@ apps/site/site-r2.log
 apps/agent/agent-server.log
 apps/site/site-server.log
 apps/agent/rebuild.log
+apps/agent/agent-r4.log
+apps/site/site-r4.log
+apps/agent/agent-r5.log
+apps/site/site-r5.log
