@@ -91,8 +91,9 @@ function bodyChars(sections: Array<{ body?: string; bullets?: string[] }>): numb
 }
 
 /**
- * 往期周键（过刊目录数据）：快照内出现过的 ISO 周（倒序，最新在前），排除 excludeKey。
- * 与 buildWeeklyIssue 同一快照口径（listPages(50)）；count 供过刊页「第 N 期 · 共 M 篇」小注用。
+ * 过刊目次数据：快照内出现过的 ISO 周（倒序，最新在前），排除 excludeKey。
+ * 过刊 = 印行日（该周周五）已过的期，未来周不入目次；快照外的周不出现。
+ * 与 buildWeeklyIssue 同一快照口径（listPages(50)）；count 供目次「共 M 篇」小注用。
  */
 export interface ArchiveWeek {
   /** ISO 周键，如 "2026-W47" */
@@ -101,18 +102,19 @@ export interface ArchiveWeek {
   count: number;
 }
 
-/** refDate 所属 ISO 周键（本期语义） */
-export function weekKeyOf(refDate: Date): string {
-  return isoWeekKey(refDate);
-}
-
+/** 过刊周列表：印行日已过的期，最新在前；供 /weekly 过刊目次导航 */
 export function listArchiveWeeks(excludeKey?: string, limit = 12): ArchiveWeek[] {
   const counts = new Map<string, number>();
+  const today = new Date();
   for (const p of listPages(50)) {
     const w = isoWeekKey(new Date(p.createdAt));
     if (w !== excludeKey) counts.set(w, (counts.get(w) ?? 0) + 1);
   }
   return [...counts.entries()]
+    .filter(([w]) => {
+      const d = issueDateFromWeekKey(w);
+      return d !== null && d.getTime() <= today.getTime();
+    })
     .sort((a, b) => (a[0] < b[0] ? 1 : -1))
     .slice(0, limit)
     .map(([week, count]) => ({ week, count }));
