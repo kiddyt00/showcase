@@ -37,3 +37,6 @@ next-env.d.ts
 
 # 图表渲染产物（HTML/SVG 由工作台生成）
 /public/diagrams/
+scripts/tmp-*
+apps/agent/debug.log
+ab-test/
