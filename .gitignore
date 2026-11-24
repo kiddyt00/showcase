@@ -40,3 +40,8 @@ next-env.d.ts
 scripts/tmp-*
 apps/agent/debug.log
 ab-test/
+apps/agent/agent-r2.log
+apps/site/site-r2.log
+apps/agent/agent-server.log
+apps/site/site-server.log
+apps/agent/rebuild.log
