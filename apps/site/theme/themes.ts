@@ -36,7 +36,7 @@ const editorial: ThemeDef = {
   label: "Editorial · 杂志编辑",
   tokens: {
     "--font-display":
-      "var(--font-playfair), 'Playfair Display', Georgia, 'Times New Roman', 'Songti SC', 'STSong', serif",
+      "var(--font-playfair), 'Playfair Display', var(--font-noto-serif-sc), 'Noto Serif SC', 'Songti SC', 'STSong', Georgia, 'Times New Roman', serif",
     "--font-body":
       "var(--font-geist-sans), system-ui, -apple-system, 'PingFang SC', 'Hiragino Sans GB', 'Microsoft YaHei', sans-serif",
     "--bg": "#faf9f6",
@@ -50,10 +50,30 @@ const editorial: ThemeDef = {
   },
 };
 
-/** 主题注册表：新增主题往这里加即可 */
-export const THEMES: ThemeDef[] = [editorial];
+/** swiss：瑞士国际主义/新粗野（纯白、近黑、国际橙、无圆角、暴露结构感） */
+const swiss: ThemeDef = {
+  name: "swiss",
+  label: "Swiss · 瑞士国际主义",
+  tokens: {
+    "--font-display":
+      "'Archivo', 'Helvetica Neue', var(--font-geist-sans), 'PingFang SC', 'Noto Sans SC', sans-serif",
+    "--font-body":
+      "var(--font-geist-mono), ui-monospace, 'PingFang SC', 'Noto Sans SC', monospace",
+    "--bg": "#ffffff",
+    "--fg": "#111111",
+    "--accent": "#ff4d00",
+    "--muted": "#6b7280",
+    "--card": "#ffffff",
+    "--border": "#111111",
+    radius: "0rem",
+    serifHeadings: false,
+  },
+};
 
-export const DEFAULT_THEME = editorial.name;
+/** 主题注册表：新增主题往这里加即可 */
+export const THEMES: ThemeDef[] = [editorial, swiss];
+
+export const DEFAULT_THEME = swiss.name;
 
 export function getTheme(name: string | undefined | null): ThemeDef {
   return THEMES.find((t) => t.name === name) ?? THEMES[0];
