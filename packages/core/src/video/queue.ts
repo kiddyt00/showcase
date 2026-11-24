@@ -4,7 +4,7 @@
  * - rendering 状态超过 15 分钟的任务视为僵死，惰性置为 failed 允许重试
  */
 import { db, upsertVideoJob, getVideoJob, getPage, setVideoJobProgress } from "../store";
-import type { Orientation } from "./types";
+import type { Orientation, VideoMode } from "./types";
 
 export const MAX_CONCURRENT_RENDERS = 1;
 const RENDER_TIMEOUT_MS = 15 * 60 * 1000;
@@ -60,11 +60,13 @@ export type StartRenderResult = "started" | "exists" | "busy" | "not-found";
  */
 export async function startRender(
   slug: string,
-  orientation: Orientation
+  orientation: Orientation,
+  mode: VideoMode = "standard"
 ): Promise<StartRenderResult> {
   sweepStaleRenderingJobs();
   const existing = getVideoJob(slug, orientation);
-  if (existing && (existing.status === "done" || existing.status === "rendering")) {
+  // 幂等：渲染中或已完成直接返回（slides 模式产物与标准版不同名，done 不拦截以便补产幻灯片版）
+  if (existing && (existing.status === "rendering" || (existing.status === "done" && mode !== "slides"))) {
     return "exists";
   }
   if (!getPage(slug)) return "not-found";
@@ -79,10 +81,10 @@ export async function startRender(
   };
   upsertVideoJob(job);
   renderVideo(slug, orientation, (percent) =>
-    setVideoJobProgress(slug, orientation, percent)
+    setVideoJobProgress(slug, orientation, percent), mode
   )
-    .then((videoPath) => {
-      upsertVideoJob({ ...job, status: "done", progress: 100, videoPath });
+    .then(({ path, scenes }) => {
+      upsertVideoJob({ ...job, status: "done", progress: 100, videoPath: path, scenes });
     })
     .catch((err) => {
       upsertVideoJob({

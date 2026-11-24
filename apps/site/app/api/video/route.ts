@@ -26,6 +26,7 @@ export async function GET(request: NextRequest) {
     ok: true,
     job,
     url: job?.status === "done" ? `/videos/${slug}-${orientation}.mp4` : null,
+    scenes: job?.scenes ?? [],
     dimensions: DIMENSIONS[orientation],
   });
 }

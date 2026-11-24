@@ -77,6 +77,12 @@ try {
 } catch {
   /* 列已存在，忽略 */
 }
+// 轻量迁移：video_jobs 补 scenes 列（场景摘要 JSON，播放器章节时间轴）
+try {
+  db.exec(`ALTER TABLE video_jobs ADD COLUMN scenes TEXT DEFAULT '[]'`);
+} catch {
+  /* 列已存在，忽略 */
+}
 
 /** 行 → PageContent */
 type PageRow = {
@@ -257,15 +263,15 @@ export async function uniqueSlugFrom(raw: string | undefined | null, title: stri
 
 /* ---------- 视频任务 ---------- */
 
-import type { VideoJob, VideoStatus, Orientation } from "./video/types";
+import type { SceneSummary, VideoJob, VideoStatus, Orientation } from "./video/types";
 
 export function upsertVideoJob(job: VideoJob): void {
   db.prepare(
-    `INSERT INTO video_jobs (slug,orientation,status,error,video_path,created_at,progress)
-     VALUES (@slug,@orientation,@status,@error,@videoPath,@createdAt,@progress)
+    `INSERT INTO video_jobs (slug,orientation,status,error,video_path,created_at,progress,scenes)
+     VALUES (@slug,@orientation,@status,@error,@videoPath,@createdAt,@progress,@scenes)
      ON CONFLICT(slug,orientation) DO UPDATE SET
        status=excluded.status, error=excluded.error, video_path=excluded.video_path,
-       progress=excluded.progress`
+       progress=excluded.progress, scenes=excluded.scenes`
   ).run({
     slug: job.slug,
     orientation: job.orientation,
@@ -274,6 +280,7 @@ export function upsertVideoJob(job: VideoJob): void {
     videoPath: job.videoPath ?? null,
     createdAt: job.createdAt,
     progress: job.progress ?? 0,
+    scenes: JSON.stringify(job.scenes ?? []),
   });
 }
 
@@ -292,14 +299,21 @@ export function getVideoJob(slug: string, orientation: Orientation): VideoJob | 
   const row = db
     .prepare(`SELECT * FROM video_jobs WHERE slug = ? AND orientation = ?`)
     .get(slug, orientation) as
-    | { slug: string; orientation: string; status: string; error: string | null; video_path: string | null; created_at: string; progress: number | null }
+    | { slug: string; orientation: string; status: string; error: string | null; video_path: string | null; created_at: string; progress: number | null; scenes: string | null }
     | undefined;
   if (!row) return null;
+  let scenes: SceneSummary[] = [];
+  try {
+    scenes = row.scenes ? (JSON.parse(row.scenes) as SceneSummary[]) : [];
+  } catch {
+    /* 损坏数据按空处理 */
+  }
   return {
     slug: row.slug,
     orientation: row.orientation as Orientation,
     status: row.status as VideoStatus,
     error: row.error ?? undefined,
+    scenes,
     videoPath: row.video_path ?? undefined,
     progress: row.progress ?? undefined,
     createdAt: row.created_at,

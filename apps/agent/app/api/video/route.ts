@@ -6,7 +6,7 @@ import {
   sweepStaleRenderingJobs,
 } from "@showcase/core/video/queue";
 import { upsertVideoJob, getVideoJob, getPage, setVideoJobProgress } from "@showcase/core/store";
-import { DIMENSIONS, Orientation } from "@showcase/core/video/types";
+import { DIMENSIONS, Orientation, VideoMode } from "@showcase/core/video/types";
 import { NextRequest } from "next/server";
 import { requireAdmin, rateLimit, clientKey } from "@showcase/core/auth";
 import { isPublicMode, publicNotFound } from "@showcase/core/mode";
@@ -21,7 +21,7 @@ export async function POST(request: NextRequest) {
   const limited = rateLimit(`video:${clientKey(request)}`, 10, 60_000);
   if (limited) return limited;
   const body = (await request.json().catch(() => null)) as
-    | { slug?: string; orientation?: Orientation }
+    | { slug?: string; orientation?: Orientation; mode?: VideoMode }
     | null;
   const slug = body?.slug;
   if (body?.orientation && !(ORIENTATIONS as readonly string[]).includes(body.orientation)) {
@@ -32,6 +32,7 @@ export async function POST(request: NextRequest) {
   }
   const orientation: Orientation =
     body?.orientation === "portrait" ? "portrait" : "landscape";
+  const mode: VideoMode = body?.mode === "slides" ? "slides" : "standard";
   if (!slug) return Response.json({ error: "缺少 slug" }, { status: 400 });
   if (!getPage(slug)) {
     return Response.json({ error: "页面不存在" }, { status: 404 });
@@ -40,9 +41,9 @@ export async function POST(request: NextRequest) {
   // 惰性清理：把超过 15 分钟仍处于 rendering 的僵死任务置为 failed
   sweepStaleRenderingJobs();
 
-  // 幂等：渲染中或已完成直接返回
+  // 幂等：渲染中或已完成直接返回（slides 模式产物独立命名，done 不拦截以便补产幻灯片版）
   const existing = getVideoJob(slug, orientation);
-  if (existing && (existing.status === "rendering" || existing.status === "done")) {
+  if (existing && (existing.status === "rendering" || (existing.status === "done" && mode !== "slides"))) {
     return Response.json({ ok: true, job: existing });
   }
 
@@ -64,10 +65,10 @@ export async function POST(request: NextRequest) {
 
   // 后台执行（进程内异步任务）
   renderVideo(slug, orientation, (percent) =>
-    setVideoJobProgress(slug, orientation, percent)
+    setVideoJobProgress(slug, orientation, percent), mode
   )
-    .then((videoPath) => {
-      upsertVideoJob({ ...job, status: "done", progress: 100, videoPath });
+    .then(({ path, scenes }) => {
+      upsertVideoJob({ ...job, status: "done", progress: 100, videoPath: path, scenes });
     })
     .catch((err) => {
       upsertVideoJob({
@@ -103,6 +104,7 @@ export async function GET(request: NextRequest) {
     ok: true,
     job,
     url: job?.status === "done" ? `/videos/${slug}-${orientation}.mp4` : null,
+    scenes: job?.scenes ?? [],
     dimensions: DIMENSIONS[orientation],
   });
 }

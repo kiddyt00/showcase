@@ -1,16 +1,154 @@
 "use client";
 
-/** 解说视频区块：16:9 / 9:16 生成按钮 + 播放器 */
+/** 解说视频区块：16:9 / 9:16 生成按钮 + 播放器（章节时间轴/倍速/键盘快进） */
 import { useCallback, useEffect, useRef, useState } from "react";
 
 type Orientation = "landscape" | "portrait";
 type Status = "pending" | "rendering" | "done" | "failed" | undefined;
+type VideoMode = "standard" | "slides";
+
+/** 章节摘要（来自 /api/video 的 scenes 字段） */
+interface SceneSummary {
+  heading: string;
+  seconds: number;
+}
 
 const MAX_POLL_FAILURES = 5;
+const PLAYBACK_RATES = [1, 1.25, 1.5, 2];
+
+/** done 状态播放器：章节时间轴 + 倍速 + 键盘 ←/→ ±5s；slidesAvail 时可切换图文幻灯片版产物 */
+function VideoPlayer({ slug, orientation, scenes, slidesAvail, variant, onVariant }: {
+  slug: string;
+  orientation: Orientation;
+  scenes: SceneSummary[];
+  slidesAvail: boolean;
+  variant: VideoMode;
+  onVariant: (v: VideoMode) => void;
+}) {
+  const videoRef = useRef<HTMLVideoElement>(null);
+  const containerRef = useRef<HTMLDivElement>(null);
+  const [current, setCurrent] = useState(0); // 当前播放秒
+  const [rateIdx, setRateIdx] = useState(0);
+
+  // 章节起点（秒）：按 seconds 累加
+  const chapterStarts: number[] = [];
+  let acc = 0;
+  for (const s of scenes) {
+    chapterStarts.push(acc);
+    acc += s.seconds;
+  }
+  const activeIdx = (() => {
+    for (let i = chapterStarts.length - 1; i >= 0; i--) {
+      if (current >= chapterStarts[i]) return i;
+    }
+    return 0;
+  })();
+
+  const seekTo = useCallback((sec: number) => {
+    const v = videoRef.current;
+    if (!v) return;
+    v.currentTime = Math.max(0, sec);
+  }, []);
+
+  function cycleRate() {
+    const next = (rateIdx + 1) % PLAYBACK_RATES.length;
+    setRateIdx(next);
+    if (videoRef.current) videoRef.current.playbackRate = PLAYBACK_RATES[next];
+  }
+
+  function onKey(e: React.KeyboardEvent) {
+    if (e.key === "ArrowLeft") {
+      e.preventDefault();
+      seekTo((videoRef.current?.currentTime ?? 0) - 5);
+    } else if (e.key === "ArrowRight") {
+      e.preventDefault();
+      seekTo((videoRef.current?.currentTime ?? 0) + 5);
+    }
+  }
+
+  return (
+    <div ref={containerRef} tabIndex={0} onKeyDown={onKey} className="outline-none">
+      {/* 章节时间轴：宽度按 seconds 比例，点击跳转，当前章节 accent 填充 */}
+      {scenes.length > 0 && (
+        <div className="mb-2 flex h-7 w-full gap-0.5 overflow-hidden rounded-md">
+          {scenes.map((s, i) => {
+            const pct = chapterStarts[i + 1] !== undefined
+              ? Math.min(100, Math.max(0, ((current - chapterStarts[i]) / s.seconds) * 100))
+              : current >= chapterStarts[i] ? 100 : 0;
+            return (
+              <button
+                key={i}
+                title={s.heading}
+                onClick={() => seekTo(chapterStarts[i])}
+                className="relative h-full min-w-[24px] overflow-hidden bg-[var(--border)] transition-colors hover:opacity-80"
+                style={{ flex: `${Math.max(s.seconds, 1)} 1 0%` }}
+              >
+                <span
+                  className={`absolute inset-y-0 left-0 ${i === activeIdx ? "bg-accent" : "bg-[var(--fg)] opacity-30"}`}
+                  style={{ width: `${pct}%` }}
+                />
+                <span className="relative z-10 block w-full truncate px-1 text-[10px] leading-7 text-[var(--fg)]">
+                  {s.heading}
+                </span>
+              </button>
+            );
+          })}
+        </div>
+      )}
+      <video
+        ref={videoRef}
+        controls
+        className="w-full rounded-lg"
+        src={variant === "slides" ? `/videos/${slug}-${orientation}-slides.mp4` : `/videos/${slug}-${orientation}.mp4`}
+        onTimeUpdate={(e) => setCurrent(e.currentTarget.currentTime)}
+      />
+      {slidesAvail && (
+        <div className="mt-2 flex gap-1">
+          {([
+            { v: "standard" as VideoMode, label: "标准版" },
+            { v: "slides" as VideoMode, label: "🎬 图文幻灯片版" },
+          ]).map(({ v, label }) => (
+            <button
+              key={v}
+              onClick={() => onVariant(v)}
+              className={`rounded px-2 py-0.5 text-xs ${
+                variant === v ? "bg-accent text-[var(--bg,#0b0f0e)]" : "border border-[var(--border)] text-muted hover:border-accent"
+              }`}
+            >
+              {label}
+            </button>
+          ))}
+        </div>
+      )}
+      <div className="mt-2 flex items-center justify-between">
+        <div className="flex items-center gap-1">
+          {PLAYBACK_RATES.map((r, i) => (
+            <button
+              key={r}
+              onClick={() => {
+                setRateIdx(i);
+                if (videoRef.current) videoRef.current.playbackRate = r;
+              }}
+              className={`rounded px-2 py-0.5 text-xs ${
+                i === rateIdx ? "bg-accent text-[var(--bg,#0b0f0e)]" : "border border-[var(--border)] text-muted hover:border-accent"
+              }`}
+            >
+              {r}x
+            </button>
+          ))}
+        </div>
+        <span className="text-[10px] text-muted">←/→ 快退快进 5 秒</span>
+      </div>
+    </div>
+  );
+}
 
 export default function VideoSection({ slug }: { slug: string }) {
   const [jobs, setJobs] = useState<Record<Orientation, { status: Status; error?: string; progress?: number }>>(
     {} as Record<Orientation, { status: Status; error?: string }>
+  );
+  const [scenes, setScenes] = useState<Record<Orientation, SceneSummary[]>>(
+    { landscape: [], portrait: [] }
   );
   const [polling, setPolling] = useState<Orientation[]>([]);
   // 每个 orientation 独立的递归 setTimeout 句柄 + in-flight 标志 + 连续失败计数
@@ -22,11 +160,28 @@ export default function VideoSection({ slug }: { slug: string }) {
     { landscape: false, portrait: false }
   );
   const [notice, setNotice] = useState("");
+  // 图文幻灯片版产物（{slug}-{orientation}-slides.mp4）探测结果 + 播放器当前变体
+  const [slidesAvail, setSlidesAvail] = useState<Record<Orientation, boolean>>(
+    { landscape: false, portrait: false }
+  );
+  const [variant, setVariant] = useState<Record<Orientation, VideoMode>>(
+    { landscape: "standard", portrait: "standard" }
+  );
+
+  // 探测 slides 产物是否存在（挂载时 + 任务状态变化后）
+  useEffect(() => {
+    for (const o of ["landscape", "portrait"] as Orientation[]) {
+      fetch(`/videos/${slug}-${o}-slides.mp4`, { method: "HEAD" })
+        .then((r) => setSlidesAvail((s) => ({ ...s, [o]: r.ok })))
+        .catch(() => setSlidesAvail((s) => ({ ...s, [o]: false })));
+    }
+  }, [slug, jobs]);
 
   const refresh = useCallback(async (o: Orientation) => {
     const res = await fetch(`/api/video?slug=${slug}&orientation=${o}`);
     const data = await res.json();
     setJobs((j) => ({ ...j, [o]: data.job ?? { status: undefined } }));
+    if (Array.isArray(data.scenes)) setScenes((s) => ({ ...s, [o]: data.scenes }));
     return data;
   }, [slug]);
 
@@ -95,7 +250,7 @@ export default function VideoSection({ slug }: { slug: string }) {
     };
   }, []);
 
-  async function generate(o: Orientation) {
+  async function generate(o: Orientation, mode: VideoMode = "standard") {
     if (generating[o]) return;
     setGenerating((g) => ({ ...g, [o]: true }));
     try {
@@ -105,7 +260,7 @@ export default function VideoSection({ slug }: { slug: string }) {
       const res = await fetch("/api/video", {
         method: "POST",
         headers,
-        body: JSON.stringify({ slug, orientation: o }),
+        body: JSON.stringify({ slug, orientation: o, ...(mode === "slides" ? { mode } : {}) }),
       });
       if (res.status === 404) {
         // 公开站只读：渲染由 Agent 工作台自动触发，完成后此区块自动展示
@@ -145,7 +300,14 @@ export default function VideoSection({ slug }: { slug: string }) {
             <div key={o} className="rounded-xl border border-[var(--border)] p-3">
               <p className="mb-2 text-xs text-muted">{label}</p>
               {job?.status === "done" ? (
-                <video controls className="w-full rounded-lg" src={`/videos/${slug}-${o}.mp4`} />
+                <VideoPlayer
+                  slug={slug}
+                  orientation={o}
+                  scenes={scenes[o]}
+                  slidesAvail={slidesAvail[o]}
+                  variant={variant[o]}
+                  onVariant={(v) => setVariant((s) => ({ ...s, [o]: v }))}
+                />
               ) : job?.status === "rendering" ? (
                 <div className="py-4">
                   <div className="h-2 w-full overflow-hidden rounded-full bg-[var(--border)]">
@@ -171,13 +333,22 @@ export default function VideoSection({ slug }: { slug: string }) {
                   </button>
                 </div>
               ) : (
-                <button
-                  onClick={() => generate(o)}
-                  disabled={generating[o]}
-                  className="w-full rounded-lg border border-[var(--border)] py-3 text-sm text-[var(--fg)] hover:border-accent disabled:opacity-40"
-                >
-                  {generating[o] ? "提交中…" : "生成解说视频"}
-                </button>
+                <div className="flex flex-col gap-2">
+                  <button
+                    onClick={() => generate(o)}
+                    disabled={generating[o]}
+                    className="w-full rounded-lg border border-[var(--border)] py-3 text-sm text-[var(--fg)] hover:border-accent disabled:opacity-40"
+                  >
+                    {generating[o] ? "提交中…" : "生成解说视频"}
+                  </button>
+                  <button
+                    onClick={() => generate(o, "slides")}
+                    disabled={generating[o]}
+                    className="w-full rounded-lg border border-[var(--border)] py-3 text-sm text-[var(--fg)] hover:border-accent disabled:opacity-40"
+                  >
+                    🎬 图文幻灯片版
+                  </button>
+                </div>
               )}
             </div>
           );

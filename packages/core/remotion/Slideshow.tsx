@@ -1,5 +1,6 @@
-import { AbsoluteFill, Audio, Img, Sequence, interpolate, staticFile, useCurrentFrame, useVideoConfig } from "remotion";
+import { AbsoluteFill, Audio, Img, OffthreadVideo, Sequence, interpolate, staticFile, useCurrentFrame, useVideoConfig } from "remotion";
 import { DIMENSIONS, Orientation, Scene } from "../src/video/types";
+import { StepFlow, StackLayers, TerminalSim } from "./components";
 
 export interface SlideshowProps {
   title: string;
@@ -7,16 +8,244 @@ export interface SlideshowProps {
   tags: string[];
   orientation: Orientation;
   scenes: Scene[];
+  /** 页面 slug：片尾卡显示短码 */
+  slug?: string;
 }
 
 const T = { bg: "#0b0f0e", fg: "#f4f4f5", accent: "#10b981", sub: "#a1a1aa" };
+
+/** 逐词高亮字幕：timeline 命中当前帧的词 accent 色，其余 muted；timeline 空则由调用方回退整句样式 */
+const WordHighlightSubtitle: React.FC<{
+  timeline: NonNullable<Scene["timeline"]>;
+  nowMs: number;
+}> = ({ timeline, nowMs }) => {
+  // 当前词 = startMs <= now 的最后一个词（读后保持高亮衰减更自然：已读 muted、当前 accent、未读更暗）
+  let curIdx = -1;
+  for (let i = 0; i < timeline.length; i++) {
+    if (timeline[i].startMs <= nowMs) curIdx = i;
+    else break;
+  }
+  return (
+    <span style={{ display: "inline", maxWidth: "100%" }}>
+      {timeline.map((w, i) => {
+        const isCur = i === curIdx;
+        const past = i < curIdx;
+        // 中文字间不加空隙；拉丁词与下个拉丁词之间保留词间距
+        const next = timeline[i + 1];
+        const latinBoundary =
+          next && /[A-Za-z0-9]$/.test(w.word) && /^[A-Za-z0-9]/.test(next.word);
+        return (
+          <span
+            key={i}
+            style={{
+              fontSize: 32,
+              fontFamily: "sans-serif",
+              color: isCur ? T.accent : T.fg,
+              opacity: isCur ? 1 : past ? 0.55 : 0.85,
+              fontWeight: isCur ? 700 : 400,
+              textShadow: isCur ? "0 0 18px rgba(16,185,129,0.5)" : "none",
+              marginRight: latinBoundary ? "0.3em" : 0,
+            }}
+          >
+            {w.word}
+          </span>
+        );
+      })}
+    </span>
+  );
+};
 
 export const slideshowCalculations = {
   dimensions: DIMENSIONS,
   fps: 30,
 };
 
-const Slideshow: React.FC<SlideshowProps> = ({ title, icon, tags, scenes }) => {
+/** slug 短码：取各段首字符 + 长度，如 "github-showcase" → "gh-s8" 风格的紧凑标识 */
+function slugShortcode(slug?: string): string {
+  if (!slug) return "";
+  const parts = slug.split(/[-_/]/).filter(Boolean);
+  const core = parts.map((p) => p.slice(0, 2)).join("-").slice(0, 12);
+  return core || slug.slice(0, 12);
+}
+
+/** 标题分词：空格分词；无空格（中文等）按 2 字一组，供逐词淡入 */
+function splitWords(text: string): { w: string; sep: string }[] {
+  const trimmed = text.trim();
+  // 按空白切但保留分隔符：拉丁词间保留空格；中文按 2 字一组分块（块间无空隙）
+  const parts = trimmed.split(/(\s+)/);
+  const out: { w: string; sep: string }[] = [];
+  for (const p of parts) {
+    if (!p) continue;
+    if (/^\s+$/.test(p)) {
+      if (out.length) out[out.length - 1].sep = " ";
+      continue;
+    }
+    if (/[A-Za-z0-9]/.test(p) && p.length <= 24 && !/[\u4e00-\u9fa5]/.test(p)) {
+      out.push({ w: p, sep: "" });
+    } else {
+      for (let i = 0; i < p.length; i += 2) {
+        out.push({ w: p.slice(i, i + 2), sep: "" });
+      }
+    }
+  }
+  return out;
+}
+
+/** 标题逐词淡入：每词间隔 3 帧，词内 8 帧完成淡入 + 轻微上移 */
+const WordFadeTitle: React.FC<{
+  text: string;
+  local: number;
+  start?: number;
+  style?: React.CSSProperties;
+}> = ({ text, local, start = 0, style }) => (
+  <h1 style={{ ...style, whiteSpace: "pre-wrap" }}>
+    {splitWords(text).map(({ w, sep }, i) => {
+      const from = start + i * 3;
+      return (
+        <span
+          key={i}
+          style={{
+            display: "inline-block",
+            whiteSpace: "pre",
+            opacity: interpolate(local, [from, from + 8], [0, 1], {
+              extrapolateLeft: "clamp",
+              extrapolateRight: "clamp",
+            }),
+            transform: `translateY(${interpolate(local, [from, from + 8], [18, 0], {
+              extrapolateLeft: "clamp",
+              extrapolateRight: "clamp",
+            })}px)`,
+          }}
+        >
+          {w + sep}
+        </span>
+      );
+    })}
+  </h1>
+);
+
+/** 代码打字机场景：深色终端窗口 + 逐字出现 + 光标闪烁 */
+const CodeTypewriter: React.FC<{
+  code: NonNullable<Scene["code"]>;
+  local: number;
+  opacity: number;
+}> = ({ code, local, opacity }) => {
+  // 每 2 帧出 1 个字符；超长代码截断（画面放不下，narration 补足）
+  const MAX_CHARS = 900;
+  const content = code.content.slice(0, MAX_CHARS);
+  const shown = content.slice(0, Math.min(content.length, Math.floor(local / 2)));
+  const done = shown.length >= content.length;
+  const cursorOn = local % 20 < 10;
+  return (
+    <div
+      style={{
+        flex: 1,
+        marginTop: 30,
+        backgroundColor: "#0d1117",
+        borderRadius: 20,
+        overflow: "hidden",
+        display: "flex",
+        flexDirection: "column",
+        opacity,
+        boxShadow: "0 24px 64px rgba(0,0,0,0.45)",
+      }}
+    >
+      {/* 窗口栏：三个圆点 + 文件名/语言 */}
+      <div
+        style={{
+          display: "flex",
+          alignItems: "center",
+          gap: 12,
+          padding: "16px 24px",
+          backgroundColor: "#161b22",
+        }}
+      >
+        {["#ff5f57", "#febc2e", "#28c840"].map((c) => (
+          <div key={c} style={{ width: 18, height: 18, borderRadius: 9, backgroundColor: c }} />
+        ))}
+        <span style={{ fontFamily: "monospace", fontSize: 24, color: "#8b949e", marginLeft: 12 }}>
+          {code.language}
+        </span>
+      </div>
+      {/* 代码区：等宽 + 打字机 */}
+      <pre
+        style={{
+          margin: 0,
+          padding: "28px 32px",
+          fontFamily: "'JetBrains Mono', 'Fira Code', monospace",
+          fontSize: 28,
+          lineHeight: 1.6,
+          color: "#e6edf3",
+          whiteSpace: "pre-wrap",
+          wordBreak: "break-word",
+          overflow: "hidden",
+          flex: 1,
+        }}
+      >
+        {shown}
+        <span style={{ color: done ? "#28c840" : "#e6edf3", opacity: cursorOn ? 1 : 0.1 }}>
+          ▍
+        </span>
+      </pre>
+    </div>
+  );
+};
+
+/** 数字滚动场景：0 → value 大号滚动 + label */
+const CounterRoll: React.FC<{
+  counter: NonNullable<Scene["counter"]>;
+  local: number;
+  dur: number;
+  opacity: number;
+}> = ({ counter, local, dur, opacity }) => {
+  const value = Math.round(
+    interpolate(local, [0, dur], [0, counter.value], {
+      extrapolateLeft: "clamp",
+      extrapolateRight: "clamp",
+    })
+  );
+  return (
+    <div
+      style={{
+        flex: 1,
+        marginTop: 30,
+        display: "flex",
+        flexDirection: "column",
+        alignItems: "center",
+        justifyContent: "center",
+        gap: 24,
+        opacity,
+      }}
+    >
+      <div
+        style={{
+          fontFamily: "monospace",
+          fontSize: 200,
+          fontWeight: 900,
+          color: T.accent,
+          fontVariantNumeric: "tabular-nums",
+          lineHeight: 1,
+          textShadow: "0 0 60px rgba(16,185,129,0.35)",
+        }}
+      >
+        {value.toLocaleString("en-US")}
+        {counter.suffix ?? ""}
+      </div>
+      <div
+        style={{
+          fontFamily: "sans-serif",
+          fontSize: 48,
+          color: T.sub,
+          letterSpacing: 4,
+        }}
+      >
+        {counter.label}
+      </div>
+    </div>
+  );
+};
+
+const Slideshow: React.FC<SlideshowProps> = ({ title, icon, tags, scenes, slug }) => {
   const frame = useCurrentFrame();
   const { fps } = useVideoConfig();
   // 图标可能是外部 URL，也可能是 public 内的本地路径
@@ -41,28 +270,68 @@ const Slideshow: React.FC<SlideshowProps> = ({ title, icon, tags, scenes }) => {
   const local = frame - starts[idx];
   const dur = scene.durationFrames;
 
+  // 转场方向：按索引奇偶交替"从右滑入"/"从左滑入"
+  const fromRight = idx % 2 === 0;
+  const inSign = fromRight ? 1 : -1;
+  // 入场：translateX ±40 → 0（12 帧）
   const inAnim = interpolate(local, [0, 12], [0, 1], { extrapolateRight: "clamp" });
   const upAnim = interpolate(local, [0, 12], [24, 0], { extrapolateRight: "clamp" });
-  const outAnim = interpolate(local, [dur - 8, dur], [1, 0.96], { extrapolateLeft: "clamp" });
+  const slideX = interpolate(local, [0, 12], [40 * inSign, 0], { extrapolateRight: "clamp" });
+  // 出场：最后 8 帧反向滑出 + 淡出
+  const outAnim = interpolate(local, [dur - 8, dur], [1, 0], { extrapolateLeft: "clamp" });
+  const outSlideX = interpolate(local, [dur - 8, dur], [0, -40 * inSign], { extrapolateLeft: "clamp" });
 
   // 首场景（开场）与其他场景不同排版
   const isIntro = idx === 0;
-  // 图表场景：以图为主
-  const hasImage = !isIntro && !!scene.imageFile;
+  // 片尾行动卡：最后一个场景
+  const isEndCard = idx === scenes.length - 1;
+  // 图表场景：以图为主；有动画 MP4 时用视频替代静态图
+  const hasVideo = !isIntro && !!scene.videoFile;
+  const hasImage = !isIntro && !!(scene.imageFile || scene.videoFile);
+  // 代码打字机 / 数字滚动场景
+  const hasCode = !isIntro && !isEndCard && !hasImage && !!scene.code;
+  const hasCounter = !isIntro && !isEndCard && !hasImage && !hasCode && !!scene.counter;
+  // P1 动画模板：stepflow / stacklayers / terminal（timeline 为空时组件内部均分降级）
+  const tplVisual = scene.visual;
+  const hasTemplate =
+    !isIntro && !isEndCard && !hasImage && !hasCode && !hasCounter &&
+    (tplVisual === "stepflow" || tplVisual === "stacklayers" || tplVisual === "terminal");
+  // 幻灯片模式画面：slideFile 存在时全屏铺满（cover），整段场景轻微 Ken Burns 1.0 → 1.04
+  const hasSlide = !!scene.slideFile;
+  const kbSlide = hasSlide
+    ? interpolate(local, [0, dur], [1.0, 1.04], { extrapolateLeft: "clamp", extrapolateRight: "clamp" })
+    : 1;
+
   // Ken Burns：整段场景内 1.0 → 1.05
   const zoom = hasImage
     ? interpolate(local, [0, dur], [1.0, 1.05], { extrapolateLeft: "clamp", extrapolateRight: "clamp" })
     : 1;
 
+  // 标题下划线：scaleX 0 → 100%（10 帧）
+  const underline = interpolate(local, [0, 10], [0, 1], { extrapolateRight: "clamp" });
+
+  // 全片进度（底部细条）
+  const progress = total > 0 ? frame / total : 0;
+
   return (
     <AbsoluteFill style={{ backgroundColor: T.bg }}>
+      {/* 片尾卡背景：accent 渐变 */}
+      {isEndCard ? (
+        <AbsoluteFill
+          style={{
+            background: `linear-gradient(135deg, rgba(16,185,129,0.25), rgba(16,185,129,0.05) 55%, transparent)`,
+          }}
+        />
+      ) : null}
       {/* 背景光斑 */}
-      <AbsoluteFill
-        style={{
-          background:
-            "radial-gradient(60% 50% at 70% 20%, rgba(16,185,129,0.12), transparent), radial-gradient(50% 40% at 20% 80%, rgba(16,185,129,0.07), transparent)",
-        }}
-      />
+      {!isEndCard ? (
+        <AbsoluteFill
+          style={{
+            background:
+              "radial-gradient(60% 50% at 70% 20%, rgba(16,185,129,0.12), transparent), radial-gradient(50% 40% at 20% 80%, rgba(16,185,129,0.07), transparent)",
+          }}
+        />
+      ) : null}
 
       {/* 配音：所有场景音频从时间线 0 通过 Sequence 挂载（动态挂载 Audio 只有首个生效） */}
       {scenes.map((s, i) =>
@@ -73,7 +342,40 @@ const Slideshow: React.FC<SlideshowProps> = ({ title, icon, tags, scenes }) => {
         ) : null
       )}
 
-      <AbsoluteFill style={{ display: "flex", flexDirection: "column", justifyContent: "center", padding: "8%" }}>
+      {/* 幻灯片模式：截图全屏铺满 + 底部渐变压边 + Ken Burns，替代默认布局（narration/字幕/进度条仍保留） */}
+      {hasSlide ? (
+        <AbsoluteFill style={{ overflow: "hidden" }}>
+          <Img
+            src={staticFile(scene.slideFile!)}
+            style={{
+              position: "absolute",
+              inset: 0,
+              width: "100%",
+              height: "100%",
+              objectFit: "cover",
+              transform: `scale(${kbSlide})`,
+            }}
+          />
+          {/* 底部渐变压边：字幕可读性 */}
+          <AbsoluteFill
+            style={{
+              background: "linear-gradient(to top, rgba(2,6,23,0.6), rgba(2,6,23,0.18) 18%, transparent 32%)",
+            }}
+          />
+        </AbsoluteFill>
+      ) : null}
+
+      {/* 场景容器：转场滑动（静音场景同样有动画）；幻灯片模式跳过默认布局 */}
+      <AbsoluteFill
+        style={{
+          flexDirection: "column",
+          justifyContent: "center",
+          padding: "8%",
+          opacity: outAnim,
+          transform: `translateX(${slideX + outSlideX}px)`,
+          display: hasSlide ? "none" : "flex",
+        }}
+      >
         {/* 场景进度点 */}
         <div style={{ position: "absolute", top: "6%", left: "8%", display: "flex", gap: 10 }}>
           {scenes.map((_, i) => (
@@ -97,20 +399,94 @@ const Slideshow: React.FC<SlideshowProps> = ({ title, icon, tags, scenes }) => {
           />
         ) : null}
 
-        <h1
-          style={{
-            fontFamily: "sans-serif",
-            fontSize: isIntro ? 96 : 72,
-            fontWeight: 800,
-            color: T.fg,
-            margin: 0,
-            lineHeight: 1.15,
-            opacity: inAnim * outAnim,
-            transform: `translateY(${upAnim}px)`,
-          }}
-        >
-          {isIntro ? title : `${idx}. ${scene.heading}`}
-        </h1>
+        {isEndCard ? (
+          /* 片尾行动卡：大字 CTA + slug 短码 */
+          <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-start", gap: 36 }}>
+            <h1
+              style={{
+                fontFamily: "sans-serif",
+                fontSize: 120,
+                fontWeight: 900,
+                color: T.fg,
+                margin: 0,
+                lineHeight: 1.1,
+                opacity: inAnim,
+                transform: `translateX(${interpolate(local, [0, 10], [inSign * 60, 0], { extrapolateRight: "clamp" })}px)`,
+              }}
+            >
+              去试试 →
+            </h1>
+            <div
+              style={{
+                fontFamily: "monospace",
+                fontSize: 40,
+                color: T.accent,
+                border: `2px solid ${T.accent}`,
+                borderRadius: 16,
+                padding: "12px 32px",
+                backgroundColor: "rgba(16,185,129,0.12)",
+                opacity: interpolate(local, [10, 20], [0, 1], { extrapolateLeft: "clamp", extrapolateRight: "clamp" }),
+              }}
+            >
+              {slugShortcode(slug)}
+            </div>
+            <p style={{ fontFamily: "sans-serif", fontSize: 40, color: T.sub, margin: 0, opacity: inAnim }}>
+              链接就在页面下方
+            </p>
+          </div>
+        ) : hasTemplate ? (
+          /* P1 模板场景：小字场景名 + 模板组件（beats/timeline 驱动动画） */
+          <>
+            <div
+              style={{
+                fontFamily: "sans-serif",
+                fontSize: 36,
+                fontWeight: 600,
+                color: T.sub,
+                letterSpacing: 2,
+                marginBottom: 8,
+                opacity: inAnim,
+              }}
+            >
+              {idx}. {scene.heading}
+            </div>
+            <div style={{ width: 280, height: 6, borderRadius: 3, backgroundColor: T.accent, opacity: underline, transformOrigin: "left center" }} />
+            {tplVisual === "stepflow" ? (
+              <StepFlow beats={scene.beats ?? []} timeline={scene.timeline ?? []} durationFrames={dur} fps={fps} frame={local} />
+            ) : tplVisual === "stacklayers" ? (
+              <StackLayers beats={scene.beats ?? []} timeline={scene.timeline ?? []} durationFrames={dur} fps={fps} frame={local} />
+            ) : (
+              <TerminalSim beats={scene.beats ?? []} timeline={scene.timeline ?? []} durationFrames={dur} fps={fps} frame={local} />
+            )}
+          </>
+        ) : (
+          <>
+            <WordFadeTitle
+              text={isIntro ? title : `${idx}. ${scene.heading}`}
+              local={local}
+              style={{
+                fontFamily: "sans-serif",
+                fontSize: isIntro ? 96 : 72,
+                fontWeight: 800,
+                color: T.fg,
+                margin: 0,
+                lineHeight: 1.15,
+              }}
+            />
+            {/* 标题下划线：accent 色 scaleX 展开 */}
+            <div
+              style={{
+                width: isIntro ? 360 : 280,
+                height: 8,
+                marginTop: 24,
+                borderRadius: 4,
+                backgroundColor: T.accent,
+                transform: `scaleX(${underline})`,
+                transformOrigin: "left center",
+              }}
+            />
+          </>
+        )}
 
         {hasImage ? (
           <>
@@ -131,10 +507,18 @@ const Slideshow: React.FC<SlideshowProps> = ({ title, icon, tags, scenes }) => {
                 opacity: inAnim * outAnim,
               }}
             >
-              <Img
-                src={staticFile(scene.imageFile!)}
-                style={{ width: "100%", height: "100%", objectFit: "contain", transform: `scale(${zoom})` }}
-              />
+              {hasVideo ? (
+                <OffthreadVideo
+                  src={staticFile(scene.videoFile!)}
+                  muted
+                  style={{ width: "100%", height: "100%", objectFit: "contain" }}
+                />
+              ) : (
+                <Img
+                  src={staticFile(scene.imageFile!)}
+                  style={{ width: "100%", height: "100%", objectFit: "contain", transform: `scale(${zoom})` }}
+                />
+              )}
             </div>
             {scene.bullets.length ? (
               <div style={{ display: "flex", gap: 24, marginTop: 20, opacity: inAnim }}>
@@ -148,7 +532,15 @@ const Slideshow: React.FC<SlideshowProps> = ({ title, icon, tags, scenes }) => {
           </>
         ) : null}
 
-        {!hasImage && !isIntro ? (
+        {hasCode ? (
+          <CodeTypewriter code={scene.code!} local={local} opacity={inAnim * outAnim} />
+        ) : null}
+
+        {hasCounter ? (
+          <CounterRoll counter={scene.counter!} local={local} dur={dur} opacity={inAnim * outAnim} />
+        ) : null}
+
+        {!hasImage && !hasCode && !hasCounter && !hasTemplate && !isIntro && !isEndCard ? (
           <ul style={{ marginTop: 40, opacity: inAnim, transform: `translateY(${upAnim}px)` }}>
             {scene.bullets.map((b, i) => (
               <li
@@ -165,18 +557,18 @@ const Slideshow: React.FC<SlideshowProps> = ({ title, icon, tags, scenes }) => {
               </li>
             ))}
           </ul>
-        ) : (
-          <div style={{ display: "flex", gap: 16, marginTop: 40, opacity: inAnim }}>
-            {tags.map((t) => (
+        ) : !isEndCard ? (
+          <div style={{ display: "flex", flexWrap: "wrap", gap: 16, rowGap: 14, marginTop: 40, opacity: inAnim, maxWidth: "100%" }}>
+            {tags.slice(0, 8).map((t) => (
               <span key={t} style={{ fontFamily: "sans-serif", fontSize: 36, color: T.accent, border: `2px solid ${T.accent}`, borderRadius: 999, padding: "6px 24px" }}>
                 {t}
               </span>
             ))}
           </div>
-        )}
+        ) : null}
       </AbsoluteFill>
 
-      {/* 底部品牌 + 场景字幕 */}
+      {/* 底部品牌 + 场景字幕（片尾卡字幕由 CTA 区承担） */}
       <div
         style={{
           position: "absolute",
@@ -190,9 +582,26 @@ const Slideshow: React.FC<SlideshowProps> = ({ title, icon, tags, scenes }) => {
         }}
       >
         <span style={{ fontSize: 30, color: T.sub }}>ShowCase</span>
-        <span style={{ fontSize: 32, color: T.fg, opacity: 0.85, maxWidth: "70%" }}>
-          {isIntro ? "" : scene.narration.length > 60 ? scene.narration.slice(0, 60) + "…" : scene.narration}
-        </span>
+        {!isEndCard ? (
+          !isIntro && scene.timeline?.length ? (
+            /* 逐词高亮字幕（音画同步）：当前帧时间 → timeline 命中词 accent 色 */
+            <div style={{ maxWidth: "70%", maxHeight: 120, overflow: "hidden" }}>
+              <WordHighlightSubtitle
+                timeline={scene.timeline}
+                nowMs={((starts[idx] + local) / fps) * 1000}
+              />
+            </div>
+          ) : (
+            <span style={{ fontSize: 32, color: T.fg, opacity: 0.85, maxWidth: "70%" }}>
+              {isIntro ? "" : scene.narration.length > 60 ? scene.narration.slice(0, 60) + "…" : scene.narration}
+            </span>
+          )
+        ) : null}
+      </div>
+
+      {/* 全片进度条：底部 2px 细条，accent 色 */}
+      <div style={{ position: "absolute", bottom: 0, left: 0, right: 0, height: 2, backgroundColor: "#27272a" }}>
+        <div style={{ width: `${progress * 100}%`, height: "100%", backgroundColor: T.accent }} />
       </div>
 
       {/* 首帧黑场淡入 */}

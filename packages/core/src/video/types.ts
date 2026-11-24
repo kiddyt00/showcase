@@ -9,6 +9,9 @@ export const DIMENSIONS: Record<Orientation, { width: number; height: number }> 
 
 export const FPS = 30;
 
+/** 视频模式：standard=动画模板；slides=HTML 幻灯片截图画面 */
+export type VideoMode = "standard" | "slides";
+
 /** 一个视频场景 = 一张幻灯片 + 一段配音 */
 export interface Scene {
   heading: string;
@@ -19,8 +22,24 @@ export interface Scene {
   audioFile: string;
   /** 该场景帧数（由音频时长决定） */
   durationFrames: number;
+  /** 可选：幻灯片模式截图（public 相对路径），存在时全屏铺满替代默认布局 */
+  slideFile?: string;
   /** 可选：本场景配图（public 相对路径，指向 diagrams SVG），存在时画面以图为主 */
   imageFile?: string;
+  /** 可选：图表动画视频（public 相对路径，指向 diagrams MP4），存在时替代静态 imageFile */
+  videoFile?: string;
+  /** 可选：代码场景——终端窗口 + 打字机动画 */
+  code?: { language: string; content: string };
+  /** 可选：数字滚动场景——大号数字 0→value 滚动 + label */
+  counter?: { label: string; value: number; suffix?: string };
+  /** 词级时间戳（TTS 产出，音画同步用），空/缺失时字幕与动画退回均分驱动 */
+  timeline?: { word: string; startMs: number; endMs: number }[];
+  /** 动画模板：text=标题+bullets 默认布局，其余渲染对应模板组件 */
+  visual?: "text" | "diagram" | "code" | "counter" | "stepflow" | "stacklayers" | "terminal" | "slide";
+  /** 模板节拍：atWord 匹配 timeline 中的词 → 动画触发时刻 */
+  beats?: { atWord: string; action: string; content?: string; label?: string }[];
+  /** 开场钩子场景标记（来自脚本层） */
+  hookScene?: boolean;
 }
 
 /** 一次视频任务 */
@@ -33,6 +52,17 @@ export interface VideoJobSpec {
   scenes: Scene[];
 }
 
+/** 章节摘要：给播放器时间轴用 */
+export interface SceneSummary {
+  heading: string;
+  /** 该场景时长（秒） */
+  seconds: number;
+  /** 动画模板类型（缺省 text；验证/观测用） */
+  visual?: Scene["visual"];
+  /** 词级时间戳词条数（0 = 未产出，渲染端均分降级） */
+  timelineWords?: number;
+}
+
 export type VideoStatus = "pending" | "rendering" | "done" | "failed";
 
 export interface VideoJob {
@@ -43,5 +73,7 @@ export interface VideoJob {
   videoPath?: string;
   /** 渲染进度 0~100（rendering 状态时有意义） */
   progress?: number;
+  /** 渲染完成后的场景摘要（章节时间轴） */
+  scenes?: SceneSummary[];
   createdAt: string;
 }
