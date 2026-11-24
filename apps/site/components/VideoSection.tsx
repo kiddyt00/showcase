@@ -162,10 +162,6 @@ export default function VideoSection({ slug }: { slug: string }) {
   const inflightRef = useRef<Partial<Record<Orientation, boolean>>>({});
   const failCountRef = useRef<Partial<Record<Orientation, number>>>({});
   const [pollDisabled, setPollDisabled] = useState<Orientation[]>([]);
-  const [generating, setGenerating] = useState<Record<Orientation, boolean>>(
-    { landscape: false, portrait: false }
-  );
-  const [notice, setNotice] = useState("");
   // 图文幻灯片版产物（{slug}-{orientation}-slides.mp4）探测结果 + 播放器当前变体
   const [slidesAvail, setSlidesAvail] = useState<Record<Orientation, boolean>>(
     { landscape: false, portrait: false }
@@ -198,16 +194,17 @@ export default function VideoSection({ slug }: { slug: string }) {
     return data;
   }, [slug]);
 
-  const autoStartedRef = useRef(false);
+  // 挂载拉取一次状态；pending/rendering 进入轮询。
+  // 注意：本站 /api/video 只有 GET——渲染任务只能由 Agent 工作台发起，这里绝不自动 POST
   useEffect(() => {
     (async () => {
       for (const o of ["landscape", "portrait"] as Orientation[]) {
         const data = await refresh(o).catch(() => null);
-        // 无任务 → 自动发起渲染（无需手点）；渲染队列信号量会让并发 POST 返回繁忙，稍后补排
-        if (data && !data.job) void generate(o);
+        if (data?.job && (data.job.status === "rendering" || data.job.status === "pending")) {
+          setPolling((p) => [...new Set([...p, o])]);
+        }
       }
     })();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [refresh]);
 
   // 渲染中轮询：每个 orientation 一个递归 setTimeout，避免请求堆叠
@@ -263,44 +260,18 @@ export default function VideoSection({ slug }: { slug: string }) {
     };
   }, []);
 
-  async function generate(o: Orientation, mode: VideoMode = "standard") {
-    if (generating[o]) return;
-    setGenerating((g) => ({ ...g, [o]: true }));
-    try {
-      const headers: Record<string, string> = { "Content-Type": "application/json" };
-      const token = localStorage.getItem("showcase-admin-token");
-      if (token) headers["x-admin-token"] = token;
-      const res = await fetch("/api/video", {
-        method: "POST",
-        headers,
-        body: JSON.stringify({ slug, orientation: o, ...(mode === "slides" ? { mode } : {}) }),
-      });
-      if (res.status === 404) {
-        // 公开站只读：渲染由 Agent 工作台自动触发，完成后此区块自动展示
-        setNotice("解说视频由工作台生成中，完成后会自动展示在这里。");
-        return;
-      }
-      setPollDisabled((d) => d.filter((x) => x !== o));
-      setPolling((p) => [...new Set([...p, o])]);
-      await refresh(o);
-    } finally {
-      setGenerating((g) => ({ ...g, [o]: false }));
-    }
-  }
-
   const configs: { o: Orientation; label: string }[] = [
     { o: "landscape", label: "16:9 横版（B站/YouTube）" },
     { o: "portrait", label: "9:16 竖版（抖音/Shorts）" },
   ];
 
+  // 一个任务都没有：整块不渲染（公开站无"生成"入口——渲染由 Agent 工作台发起）
+  const hasAnyJob = configs.some(({ o }) => Boolean(jobs[o]?.status));
+  if (!hasAnyJob) return null;
+
   return (
     <section className="mx-auto max-w-5xl px-4 pb-8"><div className="max-w-3xl">
       <h2 className="mb-3 text-lg font-semibold">解说视频</h2>
-      {notice && (
-        <p className="mb-3 rounded-lg border border-[var(--border)] bg-[var(--card)] px-3 py-2 text-xs text-muted">
-          {notice}
-        </p>
-      )}
       {pollDisabled.length > 0 && (
         <p className="mb-3 rounded-lg border border-[var(--border)] bg-[var(--card)] px-3 py-2 text-xs text-[#9a6700]">
           状态查询连续失败，已停止自动刷新；请稍后手动刷新页面重试。
@@ -309,10 +280,11 @@ export default function VideoSection({ slug }: { slug: string }) {
       <div className="grid gap-4 sm:grid-cols-2">
         {configs.map(({ o, label }) => {
           const job = jobs[o];
+          if (!job?.status) return null; // 该方向无任务：不渲染空卡片
           return (
             <div key={o} className="rounded-xl border border-[var(--border)] p-3">
               <p className="mb-2 text-xs text-muted">{label}</p>
-              {job?.status === "done" ? (
+              {job.status === "done" ? (
                 <VideoPlayer
                   slug={slug}
                   orientation={o}
@@ -322,7 +294,7 @@ export default function VideoSection({ slug }: { slug: string }) {
                   slidesAvail={slidesAvail[o]}
                   hfAvail={hfAvail[o]}
                 />
-              ) : job?.status === "rendering" ? (
+              ) : job.status === "rendering" ? (
                 <div className="py-4">
                   <div className="h-2 w-full overflow-hidden rounded-full bg-[var(--border)]">
                     {typeof job.progress === "number" && job.progress > 0 ? (
@@ -339,29 +311,22 @@ export default function VideoSection({ slug }: { slug: string }) {
                     （首次渲染约 3~8 分钟）
                   </p>
                 </div>
-              ) : job?.status === "failed" ? (
-                <div className="text-sm text-accent">
-                  <p>渲染失败：{job.error}</p>
-                  <button onClick={() => generate(o)} className="mt-2 text-accent underline">
-                    重试
-                  </button>
-                </div>
+              ) : job.status === "pending" ? (
+                <p className="py-4 text-center text-xs text-muted">已进入渲染队列，完成后自动展示…</p>
               ) : (
-                <div className="flex flex-col gap-2">
-                  <button
-                    onClick={() => generate(o)}
-                    disabled={generating[o]}
-                    className="w-full rounded-lg border border-[var(--border)] py-3 text-sm text-[var(--fg)] hover:border-accent disabled:opacity-40"
-                  >
-                    {generating[o] ? "提交中…" : "生成解说视频"}
-                  </button>
-                  <button
-                    onClick={() => generate(o, "slides")}
-                    disabled={generating[o]}
-                    className="w-full rounded-lg border border-[var(--border)] py-3 text-sm text-[var(--fg)] hover:border-accent disabled:opacity-40"
-                  >
-                    🎬 图文幻灯片版
-                  </button>
+                /* failed：本站无 POST /api/video，不放假"重试"按钮；配了工作台深链时给入口 */
+                <div className="text-sm text-accent">
+                  <p>渲染失败：{job.error ?? "未知错误"}</p>
+                  {process.env.NEXT_PUBLIC_AGENT_URL && (
+                    <a
+                      href={`${process.env.NEXT_PUBLIC_AGENT_URL}/chat?slug=${slug}`}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="mt-2 inline-block underline"
+                    >
+                      回 Agent 工作台重试 ↗
+                    </a>
+                  )}
                 </div>
               )}
             </div>

@@ -43,35 +43,79 @@ export default function SearchPage() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
+  const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const mountedRef = useRef(false);
+  const skipDebounceRef = useRef(false); // popstate/URL 恢复改写 q 时跳过一次防抖
 
-  const run = useCallback(async (query: string) => {
-    if (!query.trim()) {
-      setHits(null);
-      setError(false);
-      return;
-    }
-    setLoading(true);
-    setError(false);
-    try {
-      const res = await fetch(`/api/search?q=${encodeURIComponent(query)}`);
-      const data = (await res.json()) as { hits: Hit[] };
-      setHits(data.hits);
-    } catch {
-      setHits(null);
-      setError(true);
-    } finally {
-      setLoading(false);
-    }
+  /** 把关键词写入/移出地址栏 ?q=（replaceState：不新增历史记录、保留 Next 的 history.state） */
+  const syncUrl = useCallback((query: string) => {
+    const url = new URL(window.location.href);
+    if (query.trim()) url.searchParams.set("q", query);
+    else url.searchParams.delete("q");
+    history.replaceState(history.state, "", url);
   }, []);
+
+  const run = useCallback(
+    async (query: string, sync = true) => {
+      if (sync) syncUrl(query);
+      if (!query.trim()) {
+        setHits(null);
+        setError(false);
+        return;
+      }
+      setLoading(true);
+      setError(false);
+      try {
+        const res = await fetch(`/api/search?q=${encodeURIComponent(query)}`);
+        const data = (await res.json()) as { hits: Hit[] };
+        setHits(data.hits);
+      } catch {
+        setHits(null);
+        setError(true);
+      } finally {
+        setLoading(false);
+      }
+    },
+    [syncUrl]
+  );
 
   // URL ?q= 直达（可被外部搜索框链接）
   useEffect(() => {
     const fromUrl = new URLSearchParams(window.location.search).get("q");
     if (fromUrl) {
       setQ(fromUrl);
-      run(fromUrl);
+      run(fromUrl, false); // 地址栏已是目标 URL，无需再写
     }
     inputRef.current?.focus();
+  }, [run]);
+
+  // 输入防抖 300ms：自动搜索 + URL 同步（首次挂载交给 URL 恢复，跳过）
+  useEffect(() => {
+    if (!mountedRef.current) {
+      mountedRef.current = true;
+      return;
+    }
+    if (skipDebounceRef.current) {
+      skipDebounceRef.current = false;
+      return;
+    }
+    if (debounceRef.current) clearTimeout(debounceRef.current);
+    debounceRef.current = setTimeout(() => void run(q), 300);
+    return () => {
+      if (debounceRef.current) clearTimeout(debounceRef.current);
+    };
+  }, [q, run]);
+
+  // 浏览器前进/后退：按历史里的 ?q= 恢复搜索结果
+  useEffect(() => {
+    const onPop = () => {
+      const fromUrl = new URLSearchParams(window.location.search).get("q") ?? "";
+      skipDebounceRef.current = true;
+      setQ(fromUrl);
+      void run(fromUrl, false);
+    };
+    window.addEventListener("popstate", onPop);
+    return () => window.removeEventListener("popstate", onPop);
   }, [run]);
 
   return (
@@ -81,7 +125,8 @@ export default function SearchPage() {
         className="mt-5 flex gap-2"
         onSubmit={(e) => {
           e.preventDefault();
-          run(q);
+          if (debounceRef.current) clearTimeout(debounceRef.current);
+          void run(q);
         }}
       >
         <input

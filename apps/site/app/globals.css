@@ -81,18 +81,6 @@ body::before {
   transform: scaleX(1);
 }
 
-/* ---- 章节编号：超大淡色衬线数字，grid-breaking 左溢 ---- */
-.section-number {
-  font-family: var(--heading-font);
-  font-size: clamp(4rem, 8vw, 6.5rem);
-  font-weight: 900;
-  line-height: 1;
-  color: var(--fg);
-  opacity: 0.06;
-  user-select: none;
-  pointer-events: none;
-}
-
 /* ---- 一次性入场编排：staggered reveal（fade + 上移 12px） ---- */
 @keyframes reveal-up {
   from {
@@ -158,6 +146,13 @@ body::before {
 }
 .input:focus {
   border-color: var(--accent);
+}
+
+/* iOS Safari：输入控件字号 < 16px 时聚焦会强制放大页面；sm 以下提到 16px 防缩放 */
+@media (max-width: 639.98px) {
+  .input {
+    font-size: 16px;
+  }
 }
 
 /* breakout 图表使用 50vw 计算含滚动条宽度，禁用页面横向滚动防止溢出滑块 */

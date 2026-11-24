@@ -74,7 +74,8 @@ interface LayerHtml {
 function renderLayer(
   l: NonNullable<NonNullable<Scene["storyboard"]>["layers"]>[number],
   sceneStart: number,
-  idx: number
+  idx: number,
+  durSec: number
 ): LayerHtml {
   const d = (l.enter && l.enter.delaySec) || 0;
   const at = (sceneStart + d).toFixed(2);
@@ -224,6 +225,27 @@ function renderLayer(
   })();`,
       };
     }
+    case "photo":
+    case "clip": {
+      const mediaLayer = l as unknown as { src?: string; caption?: string };
+      const src = mediaLayer.src;
+      if (!src) return { html: "", anim: "" };
+      const caption = mediaLayer.caption ?? "";
+      const isVideo = l.type === "clip" || src.endsWith(".mp4");
+      const media = isVideo
+        ? `<video class="ph-media" src="${esc(src)}" muted loop autoplay playsinline></video>`
+        : `<img class="ph-media" src="${esc(src)}" />`;
+      return {
+        html: `<div id="${id}" class="layer photo-wrap">${media}<div class="ph-scrim"></div>${caption ? `<div class="ph-caption">${esc(caption)}</div>` : ""}</div>`,
+        anim: `
+  (function(){
+    const wrap = document.querySelector('#${id}');
+    const media = wrap.querySelector('.ph-media');
+    tl.from(wrap, {opacity:0, scale:0.94, duration:0.9, ease:'power3.out'}, ${at});
+    tl.fromTo(media, {scale:1}, {scale:1.06, duration:${durSec.toFixed(2)}, ease:'none'}, ${at});
+  })();`,
+      };
+    }
     case "flowpath":
     case "stackboxes":
     case "terminal": {
@@ -267,7 +289,7 @@ export function composeHyperframesHtml(spec: VideoJobSpec): { html: string; tota
     let layersHtml = "";
     let layersAnim = "";
     if (sb?.layers?.length) {
-      const rendered = sb.layers.map((l, li) => renderLayer(l, start, li));
+      const rendered = sb.layers.map((l, li) => renderLayer(l, start, li, dur));
       layersHtml = rendered.map((x) => x.html).join("\n");
       layersAnim = rendered.map((x) => x.anim).join("\n");
     } else {
@@ -334,6 +356,12 @@ export function composeHyperframesHtml(spec: VideoJobSpec): { html: string; tota
   .cmp-label { font-size:34px; font-weight:700; color:#f4f4f5; width:300px; text-align:right; flex-shrink:0; }
   .cmp-track { flex:1; height:64px; background:rgba(255,255,255,0.05); border-radius:12px; overflow:hidden; }
   .cmp-bar { height:100%; width:0%; background:linear-gradient(90deg, rgba(16,185,129,0.5), #10b981); border-radius:12px; }
+  .photo-wrap { position:absolute; inset:0; overflow:hidden; }
+  .ph-media { width:100%; height:100%; object-fit:cover; display:block; transform-origin:center center; }
+  .ph-scrim { position:absolute; left:0; right:0; bottom:0; height:40%;
+              background:linear-gradient(to top, rgba(0,0,0,0.78), rgba(0,0,0,0.30) 55%, transparent); }
+  .ph-caption { position:absolute; left:80px; right:80px; bottom:56px; color:#f4f4f5;
+                font-size:36px; font-weight:600; line-height:1.4; text-shadow:0 2px 14px rgba(0,0,0,0.65); }
 </style>
 </head>
 <body>

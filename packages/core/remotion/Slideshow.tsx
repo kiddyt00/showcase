@@ -17,32 +17,168 @@ export interface SlideshowProps {
 
 const T = { bg: "#0b0f0e", fg: "#f4f4f5", accent: "#10b981", sub: "#a1a1aa" };
 
-/** 底部字幕（v4 压缩）：单行、字号 24，仅当前句短语（timeline 最后 10 个词拼接） */
-const SubtitleLine: React.FC<{
+/** 卡拉OK字幕：词级时间戳驱动，纯 interpolate 无状态（帧 seek 安全） */
+const SUB_HALF_COLS = 68; // 行宽上限（半角列；CJK 记 2）
+const SUB_FADE_S = 0.28; // 行切换交叉淡入时长（秒）
+
+const subCharW = (c: string) => (c.charCodeAt(0) > 0x2e80 ? 2 : 1);
+const subDisplayW = (s: string) => Array.from(s).reduce((w, c) => w + subCharW(c), 0);
+
+type KWord = { text: string; sep: string; startMs: number; endMs: number };
+type KLine = { words: KWord[]; startMs: number; endMs: number };
+
+/** 分组：timeline（或 narration 降级）→ 行。按标点断句 + 按显示宽度断行 */
+function buildKaraokeLines(
+  timeline: NonNullable<Scene["timeline"]>,
+  narration: string,
+  durFrames: number,
+  fps: number
+): KLine[] {
+  const durMs = (durFrames / fps) * 1000;
+  let src: { text: string; startMs: number; endMs: number }[];
+  if (timeline.length) {
+    src = [...timeline]
+      .sort((a, b) => a.startMs - b.startMs)
+      .map((w) => ({ text: w.word, startMs: w.startMs, endMs: w.endMs }));
+  } else {
+    // 降级：narration 按宽度切块，时长均分（整块当一个"词"，整块点亮）
+    const chars = Array.from(narration.replace(/\s+/g, " ").trim());
+    if (!chars.length) return [];
+    const chunks: string[] = [];
+    let buf = "";
+    let w = 0;
+    for (const c of chars) {
+      const cw = subCharW(c);
+      if (w + cw > SUB_HALF_COLS && buf) {
+        chunks.push(buf);
+        buf = "";
+        w = 0;
+      }
+      buf += c;
+      w += cw;
+    }
+    if (buf) chunks.push(buf);
+    const totalLen = chunks.reduce((a, b) => a + b.length, 0);
+    let idx = 0;
+    src = chunks.map((line) => {
+      const start = (idx / totalLen) * durMs;
+      idx += line.length;
+      return { text: line, startMs: start, endMs: start + (line.length / totalLen) * durMs };
+    });
+  }
+  if (!src.length) return [];
+
+  // 词间分隔：拉丁↔拉丁边界补空格（中文词块相连不补）
+  const words: KWord[] = src.map((w, i) => ({
+    text: w.text,
+    sep: /[A-Za-z0-9]$/.test(w.text) && /^[A-Za-z0-9(]/.test(src[i + 1]?.text ?? "") ? " " : "",
+    startMs: w.startMs,
+    endMs: w.endMs,
+  }));
+
+  const PUNCT = /[。！？；：、,.!?;:…—～"'”』」）)]/;
+  const lines: KLine[] = [];
+  let cur: KWord[] = [];
+  const flush = () => {
+    if (!cur.length) return;
+    lines.push({ words: cur, startMs: cur[0].startMs, endMs: cur[cur.length - 1].endMs });
+    cur = [];
+  };
+  for (const w of words) {
+    cur.push(w);
+    const width = cur.reduce((acc2, x) => acc2 + subDisplayW(x.text) + (x.sep ? 1 : 0), -1);
+    if (PUNCT.test(w.text) || width >= SUB_HALF_COLS) flush();
+  }
+  flush();
+  return lines;
+}
+
+const KaraokeSubtitle: React.FC<{
+  local: number;
+  durFrames: number;
+  fps: number;
   timeline: NonNullable<Scene["timeline"]>;
   narration: string;
-}> = ({ timeline, narration }) => {
-  const text = timeline.length
-    ? timeline.slice(-10).map((w) => w.word).join("")
-    : narration.length > 40
-      ? narration.slice(0, 40) + "…"
-      : narration;
+}> = ({ local, durFrames, fps, timeline, narration }) => {
+  const lines = React.useMemo(
+    () => buildKaraokeLines(timeline, narration, durFrames, fps),
+    [timeline, narration, durFrames, fps]
+  );
+  const t = local / fps;
+  const fadeOp = { extrapolateLeft: "clamp", extrapolateRight: "clamp" } as const;
+
+  // 当前行：startMs ≤ t < endMs；行间停顿保持上一行；首行前不显示
+  let li = lines.findIndex((l) => t >= l.startMs && t < l.endMs);
+  if (li < 0) {
+    for (let k = lines.length - 1; k >= 0; k--) {
+      if (t >= lines[k].startMs) {
+        li = k;
+        break;
+      }
+    }
+  }
+  if (li < 0) li = 0;
+
   return (
-    <span
-      style={{
-        fontSize: 24,
-        fontFamily: "sans-serif",
-        color: T.fg,
-        opacity: 0.85,
-        whiteSpace: "nowrap",
-        overflow: "hidden",
-        textOverflow: "ellipsis",
-        maxWidth: "70%",
-        display: "block",
-      }}
-    >
-      {text}
-    </span>
+    <div style={{ position: "relative", flex: 1, maxWidth: "70%", height: 110, marginLeft: 40 }}>
+      {lines.map((line, i) => {
+        // 当前行淡入 0→1；前一行在同窗口淡出 1→0（交叉淡入）
+        let opacity = 0;
+        if (i === li) {
+          opacity = interpolate(t, [line.startMs / 1000, line.startMs / 1000 + SUB_FADE_S], [0, 1], fadeOp);
+        } else if (li > 0 && i === li - 1) {
+          const nextStart = lines[li].startMs / 1000;
+          opacity = interpolate(t, [nextStart, nextStart + SUB_FADE_S], [1, 0], fadeOp);
+        }
+        if (opacity <= 0.01) return null;
+
+        return (
+          <div
+            key={i}
+            style={{
+              position: "absolute",
+              inset: 0,
+              display: "flex",
+              flexWrap: "wrap",
+              justifyContent: "flex-end",
+              alignContent: "center",
+              columnGap: 2,
+              opacity,
+              textAlign: "right",
+            }}
+          >
+            {line.words.map((w, k) => {
+              const isCur = t >= w.startMs / 1000 && t < w.endMs / 1000;
+              const isDone = t >= w.endMs / 1000;
+              // 当前词 pop：升到 1.16 后回落
+              const wProg = Math.min(
+                1,
+                Math.max(0, (t - w.startMs / 1000) / Math.max(0.001, (w.endMs - w.startMs) / 1000))
+              );
+              const pop = isCur ? interpolate(wProg, [0, 0.35, 1], [1, 1.16, 1], fadeOp) : 1;
+              return (
+                <span
+                  key={k}
+                  style={{
+                    display: "inline-block",
+                    whiteSpace: "pre",
+                    fontFamily: "sans-serif",
+                    fontSize: 34,
+                    fontWeight: isCur ? 800 : 600,
+                    lineHeight: 1.5,
+                    color: isCur ? T.accent : isDone ? T.fg : "rgba(244,244,245,0.4)",
+                    transform: `scale(${pop.toFixed(3)})`,
+                    transformOrigin: "center bottom",
+                  }}
+                >
+                  {w.text + w.sep}
+                </span>
+              );
+            })}
+          </div>
+        );
+      })}
+    </div>
   );
 };
 
@@ -726,7 +862,15 @@ const Slideshow: React.FC<SlideshowProps> = ({ title, icon, tags, scenes, slug, 
         }}
       >
         <span style={{ fontSize: 30, color: T.sub }}>ShowCase</span>
-        {!isEndCard && !isIntro ? <SubtitleLine timeline={scene.timeline ?? []} narration={scene.narration} /> : null}
+        {!isEndCard && !isIntro ? (
+          <KaraokeSubtitle
+            local={local}
+            durFrames={dur}
+            fps={fps}
+            timeline={scene.timeline ?? []}
+            narration={scene.narration}
+          />
+        ) : null}
       </div>
 
       {/* 全片进度条：底部 2px 细条，accent 色 */}
@@ -738,10 +882,12 @@ const Slideshow: React.FC<SlideshowProps> = ({ title, icon, tags, scenes, slug, 
       {frame < fps / 2 ? (
         <AbsoluteFill style={{ backgroundColor: "black", opacity: 1 - frame / (fps / 2) }} />
       ) : null}
-      {/* 全局时间戳（开发校验用，正式可去掉） */}
-      <div style={{ position: "absolute", top: "4%", right: "6%", fontFamily: "sans-serif", fontSize: 26, color: "#52525b" }}>
-        {Math.floor(frame / fps)}s / {Math.floor(total / fps)}s
-      </div>
+      {/* 全局时间戳（仅开发/Studio 预览可见；渲染 bundle NODE_ENV=production 自动整段剔除） */}
+      {process.env.NODE_ENV !== "production" ? (
+        <div style={{ position: "absolute", top: "4%", right: "6%", fontFamily: "sans-serif", fontSize: 26, color: "#52525b" }}>
+          {Math.floor(frame / fps)}s / {Math.floor(total / fps)}s
+        </div>
+      ) : null}
     </AbsoluteFill>
   );
 };

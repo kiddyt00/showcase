@@ -708,6 +708,31 @@ export const StepTimeline: React.FC<{
 
 /* ---------- 8. StatGrid 多数字网格（财报/数据面板） ---------- */
 
+/** 解析 "$57.0B" / "62%" / "8000亿" / "1.2万" → { prefix, num, suffix, decimals } */
+function parseStatValue(raw: string): { prefix: string; num: number; suffix: string; decimals: number } {
+  const s = String(raw ?? "").trim();
+  const head = s.match(/^[^0-9\-+.(（]*/)?.[0] ?? "";
+  const tail = s.slice(head.length);
+  const m = tail.match(/^(-?\d[\d,，]*(?:\.\d+)?)/);
+  if (!m) return { prefix: head, num: 0, suffix: tail, decimals: 0 };
+  const numText = m[1].replace(/[,，]/g, "");
+  const num = parseFloat(numText);
+  return {
+    prefix: head,
+    num: Number.isFinite(num) ? num : 0,
+    suffix: tail.slice(m[1].length),
+    decimals: (numText.split(".")[1] ?? "").length,
+  };
+}
+
+/** delta 语义：↑/+/涨 → accent 绿；↓/-/跌 → 红；其余中性 */
+function deltaSemantic(delta: string): { arrow: string; color: string } {
+  const s = delta.trim();
+  if (/^[↑▲+]/.test(s) || /涨|升|增/.test(s)) return { arrow: "↑ ", color: "#34d399" };
+  if (/^[↓▼\-−]/.test(s) || /跌|降|减/.test(s)) return { arrow: "↓ ", color: "#f87171" };
+  return { arrow: "", color: T.sub };
+}
+
 export const StatGrid: React.FC<{
   stats: { label: string; value: string; delta?: string }[];
   frame: number;
@@ -715,6 +740,8 @@ export const StatGrid: React.FC<{
 }> = ({ stats, frame, stagger = 9 }) => {
   const shown = stats.slice(0, 4);
   const cols = shown.length <= 2 ? shown.length : 2;
+  const COUNT_START = 8;
+  const COUNT_FRAMES = 55;
   return (
     <div
       style={{
@@ -727,6 +754,18 @@ export const StatGrid: React.FC<{
       {shown.map((s, i) => {
         const at = 6 + i * stagger;
         const enter = interpolate(frame, [at, at + 16], [0, 1], { ...clamp, easing: Easing.out(Easing.cubic) });
+        // 含数字的 value 做 spring 滚动；纯文本（如"全球第一"）静态展示
+        const parsed = /\d/.test(s.value) ? parseStatValue(s.value) : null;
+        const p = Math.min(1, Math.max(0, (frame - (at + COUNT_START)) / COUNT_FRAMES));
+        const eased = springEase(p, 1.1);
+        const current = parsed ? parsed.num * eased : 0;
+        const numText = parsed
+          ? current.toLocaleString("en-US", {
+              minimumFractionDigits: parsed.decimals,
+              maximumFractionDigits: parsed.decimals,
+            })
+          : s.value.slice(0, 12);
+        const d = s.delta ? deltaSemantic(s.delta) : null;
         return (
           <div
             key={i}
@@ -740,11 +779,26 @@ export const StatGrid: React.FC<{
             }}
           >
             <div style={{ fontFamily: "sans-serif", fontSize: 30, color: T.sub }}>{s.label.slice(0, 14)}</div>
-            <div style={{ fontFamily: "sans-serif", fontSize: 76, fontWeight: 900, color: T.fg, marginTop: 10, fontVariantNumeric: "tabular-nums" }}>
-              {s.value.slice(0, 12)}
+            <div
+              style={{
+                fontFamily: "sans-serif",
+                fontSize: 76,
+                fontWeight: 900,
+                color: T.fg,
+                marginTop: 10,
+                fontVariantNumeric: "tabular-nums",
+                lineHeight: 1.15,
+              }}
+            >
+              {parsed ? parsed.prefix : ""}
+              {numText}
+              {parsed && parsed.suffix ? <span style={{ fontSize: 52 }}>{parsed.suffix}</span> : null}
             </div>
-            {s.delta ? (
-              <div style={{ fontFamily: "sans-serif", fontSize: 30, color: T.accent, marginTop: 8, fontWeight: 700 }}>{s.delta.slice(0, 16)}</div>
+            {d ? (
+              <div style={{ fontFamily: "sans-serif", fontSize: 30, color: d.color, marginTop: 8, fontWeight: 700 }}>
+                {d.arrow}
+                {s.delta!.trim().replace(/^[↑↓▲▼+\-−]\s*/, "")}
+              </div>
             ) : null}
           </div>
         );

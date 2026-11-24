@@ -161,6 +161,25 @@ export async function generateScript(page: PageContent): Promise<ScriptScene[]> 
     const parsed = extractJson<{ scenes: ScriptScene[] }>(out);
     if (parsed.scenes?.length) {
       const norm = normalize(parsed.scenes);
+      // storyboard 质量门：违规清单回喂 LLM 重试 1 次（对照 agent.ts 的 diagrams 修正循环）
+      const headings = page.sections.map((x) => x.heading);
+      let issues = checkStoryboardQuality(norm, headings);
+      if (issues.length) {
+        console.warn(
+          "[video] storyboard 质量门违规，回喂重试:",
+          issues.map((it) => `场景${it.scene}(${it.keyword}): ${it.violations.join("；")}`).join(" | ")
+        );
+        try {
+          await retryStoryboards(page, norm, issues);
+        } catch (fixErr) {
+          console.warn("[video] storyboard 修正失败:", fixErr instanceof Error ? fixErr.message : fixErr);
+        }
+        issues = checkStoryboardQuality(norm, headings);
+        for (const it of issues) {
+          console.warn(`[video] storyboard 重试仍违规（已确定性修补）: 场景${it.scene} ${it.violations.join("；")}`);
+          patchStoryboardScene(norm[it.scene]);
+        }
+      }
       // 分镜产物落盘：便于离线检查 LLM 分镜质量（失败不阻塞）
       try {
         const dir = path.join(PUBLIC_ASSETS_DIR, "videos", `${page.slug}-assets`);
@@ -413,6 +432,110 @@ function truncateByWidth(s: string, maxWidth: number): string {
     }
   }
   return s;
+}
+
+/** storyboard 质量门：复合原语 beats / 场景层数 / keyword 撞 heading；返回空数组 = 通过 */
+type StoryIssue = { scene: number; keyword: string; violations: string[] };
+
+/** 最长连续公共子串长度（keyword↔heading 撞车检测） */
+function overlapAt(a: string, b: string): number {
+  let best = 0;
+  for (let i = 0; i < a.length; i++) {
+    for (let j = 0; j < b.length; j++) {
+      let k = 0;
+      while (i + k < a.length && j + k < b.length && a[i + k] === b[j + k]) k++;
+      if (k > best) best = k;
+    }
+  }
+  return best;
+}
+
+function checkStoryboardQuality(scenes: ScriptScene[], headings: string[]): StoryIssue[] {
+  const issues: StoryIssue[] = [];
+  scenes.forEach((s, i) => {
+    const kw = String(s.keyword || s.heading || "").trim().slice(0, 8);
+    const vs: string[] = [];
+    const sb = (s.storyboard ?? null) as Record<string, unknown> | null;
+    if (sb && typeof sb === "object") {
+      const rawLayers = Array.isArray(sb.layers) ? sb.layers : [];
+      const normLayers = rawLayers
+        .map((l) => normalizeLayer(l))
+        .filter((x): x is import("./types").StoryboardLayer => !!x);
+      if (!normLayers.length) vs.push("storyboard.layers 全部非法或为空（至少 1 个合法视觉原语层）");
+      for (const l of normLayers) {
+        if ("beats" in l && !(l.beats?.length)) {
+          vs.push(`复合原语层 "${l.type}" 的 beats 为空——必须给 ${l.type === "compare" ? "2~4" : "3~5"} 个 beats，label 从 narration 提炼具体内容`);
+        }
+      }
+    }
+    if (kw) {
+      for (const h of headings) {
+        if (!h) continue;
+        if (overlapAt(kw, h) > 6) {
+          vs.push(`keyword "${kw}" 与文章章节 heading "${h}" 重合超过 6 字——keyword 必须改写为口播钩子词`);
+          break;
+        }
+      }
+    }
+    if (vs.length) issues.push({ scene: i, keyword: kw || "(无 keyword)", violations: vs });
+  });
+  return issues;
+}
+
+/** 重试后仍违规的确定性自愈：剔空 beats 复合层、0 层场景补 narration 提炼的 text 层 */
+function patchStoryboardScene(s: ScriptScene): void {
+  const sb = (s.storyboard ?? null) as Record<string, unknown> | null;
+  if (!sb || typeof sb !== "object") return;
+  const layers = (Array.isArray(sb.layers) ? sb.layers : [])
+    .map((l) => normalizeLayer(l))
+    .filter((x): x is import("./types").StoryboardLayer => !!x)
+    .filter((l) => !("beats" in l) || (Array.isArray((l as { beats?: unknown[] }).beats) && (l as { beats: unknown[] }).beats.length > 0))
+    .slice(0, 4);
+  if (!layers.length) {
+    const content = String(s.narration || "").trim().slice(0, 24);
+    if (!content) {
+      s.storyboard = undefined;
+      return;
+    }
+    layers.push({ type: "text", content, align: "left", enter: { fx: "fade-up" } });
+  }
+  s.storyboard = { ...(sb.background ? { background: sb.background as import("./types").StoryboardBackground } : {}), layers };
+}
+
+/** 门禁未过 → 违规清单回喂 LLM 重出 storyboard（仅重试 1 次） */
+async function retryStoryboards(page: PageContent, scenes: ScriptScene[], issues: StoryIssue[]): Promise<void> {
+  const headings = page.sections.map((x) => x.heading);
+  const perScene = issues
+    .map((it) => `【场景 ${it.scene}】keyword=${it.keyword}\n原 storyboard：${JSON.stringify(scenes[it.scene]?.storyboard ?? {}, null, 2)}\n违规：\n- ${it.violations.join("\n- ")}`)
+    .join("\n\n");
+  const prompt = `以下分镜 storyboard 未通过质量检查。逐条修复违规项，只输出修复后的 JSON：
+{"scenes":[{"storyboard":{...}}]}（scenes 数组与下面列出的场景一一对应、顺序一致；每项只含 storyboard 字段，不要输出其他内容）
+
+质量规则：
+- 复合原语（flowpath/stackboxes/terminal/compare）必须内联 beats，label/content 从对应场景的口播和素材中提炼具体内容，禁止空 beats
+- 每个场景 layers 至少 1 个合法视觉原语层
+- 场景 keyword 与这些文章章节 heading 重合不得超过 6 个字：${headings.join(" / ") || "（无）"}——keyword 改写为 ≤8 字的口播钩子词（如 反直觉结论/关键数字），不要照抄章节标题
+
+=== 违规场景清单 ===
+${perScene}`;
+  const fixed = (
+    await chat(
+      [
+        { role: "system", content: "你是短视频分镜修正器。根据违规清单修复 storyboard JSON，只输出修正后的完整 JSON 对象，不要解释、不要 markdown 围栏。" },
+        { role: "user", content: prompt },
+      ],
+      { temperature: 0.5 }
+    )
+  ).content.replace(/^```(?:json)?\s*|\s*```$/g, "");
+  const reparsed = extractJson<{ scenes?: { storyboard?: unknown }[] }>(fixed);
+  const fixedList = reparsed.scenes ?? [];
+  issues.forEach((it, k) => {
+    const s = scenes[it.scene];
+    const fb = fixedList[k]?.storyboard ?? fixedList[it.scene]?.storyboard;
+    if (!s || !fb) return;
+    s.storyboard = fb;
+    patchStoryboardScene(s);
+  });
 }
 
 function normalize(scenes: ScriptScene[]): ScriptScene[] {

@@ -3,6 +3,7 @@ import type { PageContent } from "@showcase/core/types";
 import Link from "next/link";
 import { Markdown } from "./Markdown";
 import Toc, { type TocItem } from "./Toc";
+import TocChips from "./TocChips";
 import DiagramFrame from "./DiagramFrame";
 import FlowDiagram from "@/components/FlowDiagram";
 import { CountUp } from "./Motion";
@@ -86,6 +87,9 @@ export default function PageView({ page }: { page: PageContent }) {
             ))}
           </div>
         </header>
+
+        {/* 中屏章节锚点条（lg–xl）：xl 起由右侧 TOC 侧栏接管 */}
+        <TocChips items={tocItems} />
 
         {/* 元信息 */}
         {Object.keys(page.metadata).length > 0 && (

@@ -22,6 +22,8 @@ export default async function Home() {
 
   return (
     <div className="mx-auto max-w-5xl px-4 py-8">
+      {/* 首页无可见大标题（报头站名是链接非标题标签）：sr-only h1 供 SEO 与读屏导航 */}
+      <h1 className="sr-only">ShowCase · AI 驱动的知识分享站</h1>
       {/* 最新精选：左 7 列大标题 + 竖排元信息栏 5 列，非对称 */}
       {featured ? (
         <FeaturedCard page={featured} totalCount={pages.length} />
