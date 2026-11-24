@@ -4,6 +4,7 @@ import Link from "next/link";
 import { Markdown } from "./Markdown";
 import Toc, { type TocItem } from "./Toc";
 import DiagramFrame from "./DiagramFrame";
+import FlowDiagram from "@/components/FlowDiagram";
 import { readMinutes, categoryLabel, getCollections } from "@/lib/collections";
 
 export default function PageView({ page }: { page: PageContent }) {
@@ -91,12 +92,22 @@ export default function PageView({ page }: { page: PageContent }) {
             {Object.entries(page.metadata)
               .filter(([, v]) => v !== undefined && v !== "")
               .slice(0, 8)
-              .map(([k, v]) => (
-                <div key={k}>
-                  <p className="text-xs text-muted">{k}</p>
-                  <p className="mt-0.5 text-sm font-medium text-[var(--fg)]">{String(v)}</p>
-                </div>
-              ))}
+              .map(([k, v]) => {
+                // 逗号分隔的长列表（如 Topics）转成易读分隔展示，避免长 token 撑破网格
+                const raw = String(v);
+                const isList = raw.includes(",") && raw.length > 30;
+                const display = isList
+                  ? raw.split(",").map((x) => x.trim()).filter(Boolean).join(" · ")
+                  : raw;
+                return (
+                  <div key={k} className="min-w-0">
+                    <p className="text-xs text-muted">{k}</p>
+                    <p className="mt-0.5 text-sm font-medium text-[var(--fg)] [overflow-wrap:anywhere]">
+                      {display}
+                    </p>
+                  </div>
+                );
+              })}
           </div>
         )}
 
@@ -128,8 +139,28 @@ export default function PageView({ page }: { page: PageContent }) {
                       )}
                     </span>
                   </p>
-                  {d.htmlUrl ? (
-                    /* 默认交互式：iframe 直接内嵌，可悬停追踪/点击聚焦；加载期显示骨架 */
+                  {((): boolean => {
+                    /* graph 型 spec（nodes+edges）→ 自研交互流程组件（与视频视觉语言统一） */
+                    const sp = d.spec as { nodes?: unknown[] } | undefined;
+                    return Boolean(sp && Array.isArray(sp.nodes) && sp.nodes.length);
+                  })() ? (
+                    <>
+                      <FlowDiagram spec={d.spec} />
+                      <p className="mt-2 flex items-center justify-end gap-4 text-xs">
+                        {d.htmlUrl && (
+                          <a href={d.htmlUrl} target="_blank" rel="noreferrer" className="text-muted underline hover:text-accent">
+                            🔍 SeeCode 交互版 ↗
+                          </a>
+                        )}
+                        {d.svgUrl && (
+                          <a href={d.svgUrl} target="_blank" rel="noreferrer" className="text-muted underline hover:text-accent">
+                            静态大图
+                          </a>
+                        )}
+                      </p>
+                    </>
+                  ) : d.htmlUrl ? (
+                    /* 非 graph 型：SeeCode 交互式 HTML（骨架屏加载） */
                     <DiagramFrame src={d.htmlUrl} title={d.title} />
                   ) : d.svgUrl ? (
                     /* eslint-disable-next-line @next/next/no-img-element */
@@ -147,9 +178,15 @@ export default function PageView({ page }: { page: PageContent }) {
         <div className="space-y-10">
           {page.sections.map((section, i) => (
             <section key={i} id={`sec-${i}`} className="scroll-mt-20">
-              <h2 className="mb-3 border-l-2 border-accent pl-3 font-heading text-xl font-semibold">
-                {section.heading}
-              </h2>
+              {/* 章节标题：kicker 行（小号大写 SECTION NN + 章节序号）+ 衬线标题 */}
+              <div className="mb-3">
+                <p className="mb-1 text-[10px] font-semibold uppercase tracking-[0.22em] text-accent">
+                  Section {String(i + 1).padStart(2, "0")}
+                </p>
+                <h2 className="border-l-2 border-accent pl-3 font-heading text-xl font-semibold">
+                  {section.heading}
+                </h2>
+              </div>
               {section.body && <Markdown text={section.body} />}
               {section.bullets?.length ? (
                 <ul className="mt-2 space-y-1">
