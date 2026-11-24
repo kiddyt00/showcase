@@ -7,7 +7,7 @@ export default function PageCard({ page }: { page: PageSummary }) {
   return (
     <Link
       href={`/show/${page.slug}`}
-      className="group block rounded-[var(--radius)] border border-[var(--border)] bg-[var(--card)] p-4 transition hover:border-[var(--accent)]"
+      className="card-lift group block rounded-[var(--radius)] border border-[var(--border)] bg-[var(--card)] p-4 hover:border-[var(--accent)]"
     >
       <div className="flex items-center gap-3">
         {page.icon ? (

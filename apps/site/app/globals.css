@@ -33,6 +33,113 @@ body {
   font-family: var(--font-body);
 }
 
+/* ---- 纸张质感：极淡 feTurbulence 噪点叠加（氛围层，非纯色默认） ---- */
+body::before {
+  content: "";
+  position: fixed;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+  opacity: 0.04;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='240' height='240'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+}
+
+/* ---- 杂志刊头双细线：粗细双线（印刷品 top rule） ---- */
+.masthead-rule {
+  height: 5px;
+  border-top: 2px solid var(--fg);
+  border-bottom: 1px solid var(--fg);
+}
+
+/* ---- 编辑风链接下划线：点线 + 偏移 ---- */
+.link-editorial {
+  text-decoration-line: underline;
+  text-decoration-style: dotted;
+  text-decoration-color: var(--muted);
+  text-underline-offset: 3px;
+  transition: color 150ms ease, text-decoration-color 150ms ease;
+}
+
+/* ---- 精选大标题 hover 下划线滑入 ---- */
+.title-slide {
+  position: relative;
+  text-decoration: none;
+}
+.title-slide::after {
+  content: "";
+  position: absolute;
+  left: 0;
+  bottom: -0.12em;
+  height: 2px;
+  width: 100%;
+  background: var(--accent);
+  transform: scaleX(0);
+  transform-origin: left;
+  transition: transform 300ms ease;
+}
+.group:hover .title-slide::after {
+  transform: scaleX(1);
+}
+
+/* ---- 章节编号：超大淡色衬线数字，grid-breaking 左溢 ---- */
+.section-number {
+  font-family: var(--heading-font);
+  font-size: clamp(4rem, 8vw, 6.5rem);
+  font-weight: 900;
+  line-height: 1;
+  color: var(--fg);
+  opacity: 0.06;
+  user-select: none;
+  pointer-events: none;
+}
+
+/* ---- 一次性入场编排：staggered reveal（fade + 上移 12px） ---- */
+@keyframes reveal-up {
+  from {
+    opacity: 0;
+    transform: translateY(12px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+.reveal {
+  animation: reveal-up 500ms ease both;
+  animation-delay: var(--reveal-delay, 0ms);
+}
+
+/* ---- 卡片 hover：上移 2px + 阴影加深（统一 150ms） ---- */
+.card-lift {
+  transition: transform 150ms ease, box-shadow 150ms ease,
+    border-color 150ms ease, background-color 150ms ease;
+}
+.card-lift:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 6px 16px rgb(28 25 23 / 0.08);
+}
+
+/* ---- 无障碍：尊重 prefers-reduced-motion，全局关闭动效 ---- */
+@media (prefers-reduced-motion: reduce) {
+  .reveal {
+    animation: none;
+  }
+  .card-lift,
+  .card-lift:hover {
+    transform: none;
+    transition: none;
+  }
+  .title-slide::after {
+    transition: none;
+  }
+  .iframe-skeleton {
+    animation: none;
+  }
+  * {
+    scroll-behavior: auto !important;
+  }
+}
+
 /* 衬线标题工具类（editorial 版式开关） */
 .font-heading {
   font-family: var(--heading-font);

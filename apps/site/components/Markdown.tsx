@@ -66,6 +66,61 @@ function renderInline(text: string): React.ReactNode[] {
       continue;
     }
     flushList();
+    // 表格块：| 开头的连续行（首行表头，次行 --- 分隔）
+    if (/^\s*\|/.test(line)) {
+      const rows: string[][] = [];
+      let j = i;
+      for (; j < lines.length && /^\s*\|/.test(lines[j]); j++) {
+        const cells = lines[j]
+          .trim()
+          .replace(/^\|/, "")
+          .replace(/\|$/, "")
+          .split("|")
+          .map((c) => c.trim());
+        if (cells.every((c) => /^:?-{2,}:?$/.test(c) || c === "")) continue; // 分隔行
+        rows.push(cells);
+      }
+      i = j - 1;
+      if (rows.length >= 2) {
+        const [head, ...body] = rows;
+        out.push(
+          <div
+            key={key}
+            className="my-3 overflow-x-auto rounded-[var(--radius)] border border-[var(--border)]"
+          >
+            <table className="w-full border-collapse text-left text-sm">
+              <thead>
+                <tr className="bg-[var(--card)]">
+                  {head.map((c, ci) => (
+                    <th
+                      key={ci}
+                      className="border-b border-[var(--border)] px-3 py-2 text-xs font-semibold text-[var(--fg)]"
+                    >
+                      {formatSpans(c)}
+                    </th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {body.map((r, ri) => (
+                  <tr key={ri} className="border-b border-[var(--border)]/60 last:border-b-0">
+                    {r.map((c, ci) => (
+                      <td
+                        key={ci}
+                        className="px-3 py-2 align-top text-[13px] leading-relaxed text-[var(--fg)]"
+                      >
+                        {formatSpans(c)}
+                      </td>
+                    ))}
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        );
+        continue;
+      }
+    }
     // 引用行：连续的 > 行合并为一个 blockquote
     if (/^>\s?/.test(line)) {
       const quote: string[] = [];
