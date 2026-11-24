@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { Suspense } from "react";
-import { Archivo, Geist, Geist_Mono, Noto_Serif_SC, Playfair_Display } from "next/font/google";
+import { Archivo, Geist, Geist_Mono, Noto_Serif_SC, Playfair_Display, Rajdhani } from "next/font/google";
 import "./globals.css";
 import { THEMES } from "@/theme/themes";
 import { resolveTheme, themeStyle } from "@/theme/server";
@@ -28,6 +28,12 @@ const playfair = Playfair_Display({
 const archivo = Archivo({
   variable: "--font-archivo",
   subsets: ["latin"],
+});
+
+const rajdhani = Rajdhani({
+  variable: "--font-rajdhani",
+  subsets: ["latin"],
+  weight: ["500", "600", "700"],
 });
 
 // 中文衬线标题：与 Playfair 混排（拉丁字形由 Playfair 提供，CJK 字形回退到思源宋体）

@@ -70,10 +70,30 @@ const swiss: ThemeDef = {
   },
 };
 
-/** 主题注册表：新增主题往这里加即可 */
-export const THEMES: ThemeDef[] = [editorial, swiss];
+/** tech：深空科技（深蓝黑底、电光青强调、玻璃卡片、发光描边、科技感标题字体） */
+const tech: ThemeDef = {
+  name: "tech",
+  label: "Tech · 深空科技",
+  tokens: {
+    "--font-display":
+      "var(--font-rajdhani), 'Rajdhani', var(--font-geist-sans), 'PingFang SC', 'Noto Sans SC', sans-serif",
+    "--font-body":
+      "var(--font-geist-sans), system-ui, 'PingFang SC', 'Noto Sans SC', sans-serif",
+    "--bg": "#0a0e1a",
+    "--fg": "#e6edf3",
+    "--accent": "#22d3ee",
+    "--muted": "#8b96a8",
+    "--card": "#131b2e",
+    "--border": "#263248",
+    radius: "0.5rem",
+    serifHeadings: true,
+  },
+};
 
-export const DEFAULT_THEME = swiss.name;
+/** 主题注册表：新增主题往这里加即可 */
+export const THEMES: ThemeDef[] = [editorial, swiss, tech];
+
+export const DEFAULT_THEME = tech.name;
 
 export function getTheme(name: string | undefined | null): ThemeDef {
   return THEMES.find((t) => t.name === name) ?? THEMES[0];
