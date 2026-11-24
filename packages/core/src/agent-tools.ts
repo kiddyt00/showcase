@@ -212,12 +212,17 @@ export async function executeTool(
         sourceType: args.sourceType as string | undefined,
       });
       savePage(page);
-      // 自动排队解说视频渲染（横版+竖版，后台执行，完成后详情页直接展示）
+      // 自动排队解说视频渲染（横版+竖版）。渲染队列一次只跑一个，
+      // 另一个需持续重试直到排上（横版渲染约 3 分钟，重试窗口给足 10 分钟）
       void (async () => {
         for (const o of ["landscape", "portrait"] as const) {
-          const r = await startRender(page.slug, o);
-          if (r === "busy") await new Promise((r2) => setTimeout(r2, 2000));
-          await startRender(page.slug, o);
+          let started = false;
+          for (let attempt = 0; attempt < 40 && !started; attempt++) {
+            const r = await startRender(page.slug, o);
+            if (r === "started") started = true;
+            else if (r === "busy") await new Promise((r2) => setTimeout(r2, 15_000));
+            else break; // not-found 等不可恢复错误
+          }
         }
       })().catch(() => {});
       return {
@@ -309,7 +314,7 @@ export async function executeTool(
       let id = type === "architecture" ? "arch" : type;
       let n = 2;
       while (existing.some((d) => d.id === id)) id = `${type}-${n++}`;
-      const diagram = await renderDiagram(page.slug, { id, title, type, spec });
+      const { diagram, error } = await renderDiagram(page.slug, { id, title, type, spec });
       page.diagrams = [...existing, diagram];
       savePage(page);
       return {
@@ -376,6 +381,11 @@ function validateDiagramSpec(spec: unknown): SpecCheck {
     if (ids.has(id)) return { ok: false, reason: `节点 id 重复：${id}` };
     ids.add(id);
   }
+  const ALLOWED_KINDS = new Set([
+    "default", "primary", "link", "async", "return", "muted", "one-one",
+    "one-many", "many-one", "many-many", "zero-many", "one-zero",
+    "extends", "implements", "composes", "aggregates", "depends", "assoc", "line",
+  ]);
   for (const e of s.edges) {
     if (!Array.isArray(e) || e.length < 2) return { ok: false, reason: "每条边是 [from, to, ...]" };
     if (!ids.has(String(e[0])) || !ids.has(String(e[1]))) {
