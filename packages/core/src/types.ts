@@ -26,6 +26,8 @@ export interface Diagram {
   spec: unknown;
   /** 渲染产物 SVG 路径，如 /diagrams/{slug}/{id}.svg */
   svgUrl?: string;
+  /** 动画 MP4 路径（SeeCode 逐步绘制导出），如 /diagrams/{slug}/{id}.mp4；导出失败时缺省 */
+  mp4Url?: string;
   htmlUrl?: string;
 }
 
