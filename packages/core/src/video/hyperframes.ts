@@ -402,10 +402,27 @@ export async function renderVideoHyperframes(
   const projectDir = path.join(PUBLIC_ASSETS_DIR, "videos", `${slug}-hf`);
   await fs.mkdir(projectDir, { recursive: true });
 
-  // 音频已在 buildSpec 生成（资产目录内），复制到项目目录
+  // 音频已在 buildSpec 生成（资产目录内），复制到项目目录；stock/分镜媒体素材同样同步
+  // （修复 R6 发现的 standard 失败根因同款问题：渲染进程从项目目录取相对路径素材）
   const assetDir = path.join(PUBLIC_ASSETS_DIR, "videos", `${slug}-assets`, orientation);
   for (const f of await fs.readdir(assetDir)) {
     if (f.endsWith(".mp3")) await fs.copyFile(path.join(assetDir, f), path.join(projectDir, f));
+  }
+  // 分镜 photo/clip 的 src 是 public 相对路径（videos/{slug}-assets/{o}/media-N.*），
+  // HyperFrames 按 projectDir 相对路径解析 → 需重建 videos/... 目录层级
+  for (const scene of spec.scenes) {
+    const layers = scene.storyboard?.layers ?? [];
+    for (const l of layers) {
+      if ((l.type === "photo" || l.type === "clip") && "src" in l && l.src) {
+        const srcRel = (l as { src: string }).src;
+        const srcAbs = path.join(PUBLIC_ASSETS_DIR, srcRel);
+        if (await fs.stat(srcAbs).then(() => true).catch(() => false)) {
+          const destAbs = path.join(projectDir, srcRel);
+          await fs.mkdir(path.dirname(destAbs), { recursive: true });
+          await fs.copyFile(srcAbs, destAbs);
+        }
+      }
+    }
   }
 
   const { html, totalSec } = composeHyperframesHtml(spec);
