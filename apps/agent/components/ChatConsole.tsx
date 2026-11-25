@@ -6,8 +6,10 @@
  * 移动端（<lg）：Tab 切换「对话 / 元素」；Cmd/Ctrl+K 命令面板
  * R3 交互修复：字段级保存反馈（idle/saving/saved/error）、滚动跟随 + 「回到底部」浮标、
  * busy 时 Enter 排队补发、删除确认对话框、消息列表稳定 key
+ * R5 任务锚定：send() 从工具事件解析 jobId 记入 jobOriginRef，任务卡内联渲染到发起消息下方；
+ * 活跃任务始终展开、终态默认折叠为摘要行，同锚点 ≥3 张折叠为计数条；流尾只渲染来源未知的任务
  */
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { PageContent } from "@showcase/core/types";
 import type { AnalyzeJob } from "@showcase/core/store";
 import { Markdown } from "@/components/Markdown";
@@ -41,6 +43,50 @@ interface RecentPage {
 }
 
 const CATEGORIES = ["opensource", "article", "tutorial", "news", "research"];
+
+/**
+ * 从工具事件 result 文本解析 jobId（R5 任务锚定）。
+ * 已知格式：analyze_source 的 result 为
+ * 「分析任务已提交并在后台执行（jobId=<uuid>）。…」→ 捕获括号内的 jobId=xxx。
+ * 另做通用兼容：result 中任何 "jobId: xxx" / 「任务 ID：xxx」式标记也提取，
+ * 以便未来其他任务型工具（如 render_video）返回任务 id 时无需改这里；
+ * 当前 render_video 的 result 只含页面 slug 不含任务 id，解析为空 → 任务落回流尾。
+ */
+const JOB_ID_PATTERNS: RegExp[] = [
+  /jobId=([A-Za-z0-9-]+)/, // 括号内 jobId=xxx（analyze_source 现行格式）
+  /jobId[:：]\s*([A-Za-z0-9-]+)/, // jobId: xxx / jobId：xxx
+  /任务\s*ID[:：]?\s*([A-Za-z0-9-]+)/, // 任务 ID：xxx
+];
+
+function extractJobIds(ev: ToolEvent): string[] {
+  const ids: string[] = [];
+  for (const re of JOB_ID_PATTERNS) {
+    const m = ev.result.match(re);
+    if (m?.[1] && !ids.includes(m[1])) ids.push(m[1]);
+  }
+  return ids;
+}
+
+/** 任务卡默认折叠的锚点容量：同一消息下 ≥3 张时整组折叠为计数条 */
+const ANCHOR_COLLAPSE_THRESHOLD = 3;
+
+/**
+ * 任务 → 视图模型（派生数据，渲染期间计算）：job + 锚定的发起消息 id。
+ * originMsgId 为空 → 来源未知 → 流尾兜底渲染（历史恢复/旧会话向后兼容）。
+ */
+interface JobVm {
+  job: AnalyzeJob;
+  originMsgId?: string;
+}
+
+function buildJobVms(jobs: AnalyzeJob[], origin: (jobId: string) => string | undefined): JobVm[] {
+  return jobs.map((job) => ({ job, originMsgId: origin(job.id) }));
+}
+
+function truncateJobText(s: string, max: number) {
+  const t = s.replace(/\s+/g, " ").trim();
+  return t.length > max ? `${t.slice(0, max)}…` : t;
+}
 
 const QUICK_PROMPTS = [
   { label: "分析仓库", prompt: "分析 vercel/next.js 并生成页面" },
@@ -84,6 +130,13 @@ export default function ChatConsole() {
   const prevMsgCountRef = useRef(0);
   const listRef = useRef<HTMLDivElement>(null);
   const taRef = useRef<HTMLTextAreaElement>(null);
+  /**
+   * 任务锚定表：jobId → 发起该任务的用户消息 id（前端本地推导，不持久化）。
+   * 来源：send() 响应 toolEvents 里 analyze_source result 的 jobId=xxx；
+   * 刷新/历史恢复后锚点丢失 → 该任务 origin 未知 → 落回流尾（向后兼容）。
+   * 重试保留原 jobId（同一库行重置状态），锚定在重试后依然成立。
+   */
+  const jobOriginRef = useRef<Map<string, string>>(new Map());
 
   /* 管理令牌 / 会话：从 localStorage 恢复 */
   useEffect(() => {
@@ -365,7 +418,8 @@ export default function ChatConsole() {
     setBusy(true);
     setInput("");
     if (taRef.current) autoGrow(taRef.current);
-    setMessages((m) => [...m, toMsg({ role: "user", content })]);
+    const userMsgId = crypto.randomUUID();
+    setMessages((m) => [...m, toMsg({ id: userMsgId, role: "user", content })]);
     try {
       const res = await fetch("/api/chat", {
         method: "POST",
@@ -374,6 +428,12 @@ export default function ChatConsole() {
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error);
+      // 锚定：本轮工具事件里新出现的 jobId 记到本次用户消息（analyze_source result 含 jobId=xxx）
+      for (const ev of (data.toolEvents as ToolEvent[] | undefined) ?? []) {
+        for (const jobId of extractJobIds(ev)) {
+          if (!jobOriginRef.current.has(jobId)) jobOriginRef.current.set(jobId, userMsgId);
+        }
+      }
       setMessages((m) => [
         ...m,
         toMsg({
@@ -486,6 +546,17 @@ export default function ChatConsole() {
       onDelete={deletePage}
     />
   );
+
+  /* 任务视图模型：锚定分组（随消息内联）+ 来源未知兜底（流尾）。
+     每次渲染重算即可（jobs ≤20 条）；origin 读 jobOriginRef（ref 不触发渲染，
+     但本组件只在 jobs/messages/busy 变化时重渲染，锚定写入与响应落地同帧完成，时机安全）。 */
+  const { anchoredVms, orphanVms } = useMemo(() => {
+    const vms = buildJobVms(jobs, (id) => jobOriginRef.current.get(id));
+    const anchored: JobVm[] = [];
+    const orphan: JobVm[] = [];
+    for (const v of vms) (v.originMsgId ? anchored : orphan).push(v);
+    return { anchoredVms: anchored, orphanVms: orphan };
+  }, [jobs]);
 
   /* 输入框 placeholder：busy 时提示可排队 / 已排队（再按 Enter 取消） */
   const inputPlaceholder = busy
@@ -633,18 +704,42 @@ export default function ChatConsole() {
                   <p>「把标题换成中文，标签加上 AI」</p>
                 </div>
               )}
-              {messages.map((m) =>
-                m.role === "user" ? (
-                  <div key={m.id} className="msg-in flex justify-end" style={{ "--stagger-delay": "0ms" } as React.CSSProperties}>
-                    <div className="max-w-[92%] rounded-md border border-[#2a3347] bg-[#161d28] px-3 py-2 text-[13px] text-[#e6edf3]">
-                      <Markdown text={m.content} />
+              {messages.map((m) => {
+                // R5 任务锚定：发起消息（或其 assistant 回复）下内联该次提交的任务卡
+                const mine = anchoredVms.filter((v) => v.originMsgId === m.id);
+                if (!mine.length) {
+                  return m.role === "user" ? (
+                    <div key={m.id} className="msg-in flex justify-end" style={{ "--stagger-delay": "0ms" } as React.CSSProperties}>
+                      <div className="max-w-[92%] rounded-md border border-[#2a3347] bg-[#161d28] px-3 py-2 text-[13px] text-[#e6edf3]">
+                        <Markdown text={m.content} />
+                      </div>
                     </div>
-                  </div>
-                ) : (
-                  <div key={m.id} className="msg-in" style={{ "--stagger-delay": "60ms" } as React.CSSProperties}>
-                    <AssistantMsg msg={m} />
-                  </div>
-                )
+                  ) : (
+                    <div key={m.id} className="msg-in" style={{ "--stagger-delay": "60ms" } as React.CSSProperties}>
+                      <AssistantMsg msg={m} />
+                    </div>
+                  );
+                }
+                return (
+                  <Fragment key={m.id}>
+                    {m.role === "user" ? (
+                      <div className="msg-in flex justify-end" style={{ "--stagger-delay": "0ms" } as React.CSSProperties}>
+                        <div className="max-w-[92%] rounded-md border border-[#2a3347] bg-[#161d28] px-3 py-2 text-[13px] text-[#e6edf3]">
+                          <Markdown text={m.content} />
+                        </div>
+                      </div>
+                    ) : (
+                      <div className="msg-in" style={{ "--stagger-delay": "60ms" } as React.CSSProperties}>
+                        <AssistantMsg msg={m} />
+                      </div>
+                    )}
+                    <JobCardsGroup jobs={mine} onRetry={retryJob} onCancel={cancelJob} />
+                  </Fragment>
+                );
+              })}
+              {/* 流尾：仅渲染来源未知的任务（历史恢复/旧会话），已锚定的随消息内联 */}
+              {orphanVms.length > 0 && (
+                <JobCardsGroup jobs={orphanVms} onRetry={retryJob} onCancel={cancelJob} />
               )}
               {busy && (
                 <div className="flex items-center gap-2 px-1 py-1 text-[11px] text-[#8b96a8]">
@@ -657,9 +752,6 @@ export default function ChatConsole() {
                   <span className="typewriter-caret" aria-hidden />
                 </div>
               )}
-              {jobs.map((job) => (
-                <AnalyzeJobCard key={job.id} job={job} onRetry={retryJob} onCancel={cancelJob} />
-              ))}
             </div>
             {showJump && (
               <button
@@ -774,7 +866,7 @@ export default function ChatConsole() {
   );
 }
 
-/* ---------------- 分析任务卡片（阶段/进度/耗时/取消/重试） ---------------- */
+/* ---------------- 分析任务卡片（阶段/进度/耗时/取消/重试；R5 支持折叠摘要） ---------------- */
 
 const STAGE_LABELS: Record<string, string> = {
   queued: "排队中",
@@ -787,16 +879,59 @@ function AnalyzeJobCard({
   job,
   onRetry,
   onCancel,
+  collapsed = false,
+  onToggleCollapse,
 }: {
   job: AnalyzeJob;
   onRetry: (id: string) => void;
   onCancel: (id: string) => void;
+  /** R5 折叠态：true 时只渲染一行式摘要（发起消息内联场景使用） */
+  collapsed?: boolean;
+  /** 提供时收起为摘要行 */
+  onToggleCollapse?: () => void;
 }) {
   const active = job.status === "queued" || job.status === "running";
   const started = new Date(job.startedAt ?? job.createdAt).getTime();
   const ended = job.finishedAt ? new Date(job.finishedAt).getTime() : Date.now();
   const elapsedSec = Math.max(0, Math.round((ended - started) / 1000));
   const elapsedText = `${Math.floor(elapsedSec / 60)}分${String(elapsedSec % 60).padStart(2, "0")}秒`;
+
+  /* 折叠摘要行：✅ 已发布 /show/xxx · 耗时 / ❌ + 错误摘要；点击展开完整卡 */
+  if (collapsed) {
+    const icon = job.status === "failed" ? "❌" : job.status === "done" ? "✅" : "⏳";
+    const label = active
+      ? `${job.stage || "执行中"} ${job.progress}%`
+      : job.status === "done"
+        ? job.slug
+          ? `已发布 /show/${job.slug} · 耗时 ${elapsedText}`
+          : "已完成"
+        : job.error
+          ? `失败：${truncateJobText(job.error, 42)}`
+          : "失败";
+    return (
+      <button
+        onClick={onToggleCollapse}
+        className={`card-spring flex w-full items-center gap-2 rounded-md border px-3 py-1.5 text-left text-[12px] ${
+          job.status === "failed"
+            ? "border-red-900/70 bg-red-950/30"
+            : "border-emerald-900/60 bg-emerald-950/20"
+        }`}
+      >
+        <span aria-hidden>{icon}</span>
+        <span className="truncate text-[#8b96a8]">分析任务</span>
+        <span className="min-w-0 flex-1 truncate text-[#c9d4e0]">{job.input}</span>
+        <span
+          className={`shrink-0 ${
+            job.status === "failed" ? "text-red-400" : "text-emerald-400"
+          }`}
+        >
+          {label}
+        </span>
+        <span className="shrink-0 text-[#7a8698]" aria-hidden>▸</span>
+      </button>
+    );
+  }
+
   return (
     <div
       className={`card-spring rounded-md border px-3 py-2 text-[12px] ${
@@ -821,6 +956,15 @@ function AnalyzeJobCard({
         >
           {STAGE_LABELS[job.status] ?? job.status}
         </span>
+        {onToggleCollapse && (
+          <button
+            onClick={onToggleCollapse}
+            aria-label="收起任务卡"
+            className="shrink-0 text-[#7a8698] hover:text-[#8b96a8]"
+          >
+            ▾
+          </button>
+        )}
       </div>
       {active && (
         <>
@@ -867,6 +1011,70 @@ function AnalyzeJobCard({
           <span className="ml-2 text-[#7a8698]">耗时 {elapsedText}</span>
         </div>
       )}
+    </div>
+  );
+}
+
+/* ---------------- 任务卡分组：锚定内联渲染（活跃展开/终态折叠/计数条） ---------------- */
+
+/**
+ * 一个锚点（发起消息）下的任务卡组：
+ * - ≤2 张：活跃（queued/running）始终展开，终态默认折叠为摘要行，点击展开完整卡
+ * - ≥3 张：整组折叠为「N 个任务」计数条，点击展开
+ * 手动展开状态收在组件内 Set（jobId 集合），任务转终态后仍保持用户展开意图。
+ */
+function JobCardsGroup({
+  jobs,
+  onRetry,
+  onCancel,
+}: {
+  jobs: JobVm[];
+  onRetry: (id: string) => void;
+  onCancel: (id: string) => void;
+}) {
+  const [expanded, setExpanded] = useState<Set<string>>(() => new Set());
+  const toggle = (id: string) =>
+    setExpanded((s) => {
+      const next = new Set(s);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  const grouped = jobs.length >= ANCHOR_COLLAPSE_THRESHOLD;
+  const [groupOpen, setGroupOpen] = useState(false);
+  const activeCount = jobs.filter((v) => v.job.status === "queued" || v.job.status === "running").length;
+  const doneCount = jobs.filter((v) => v.job.status === "done").length;
+  const failedCount = jobs.filter((v) => v.job.status === "failed").length;
+  return (
+    <div className="space-y-1.5 pl-6">
+      {grouped && (
+        <button
+          onClick={() => setGroupOpen((v) => !v)}
+          className="flex w-full items-center gap-2 rounded border border-[#21283a] bg-[#10161f] px-2.5 py-1.5 text-left font-mono text-[11px] text-[#8b96a8] hover:border-[#2a3347]"
+        >
+          <span>{groupOpen ? "▾" : "▸"}</span>
+          <span>{jobs.length} 个任务</span>
+          {activeCount > 0 && <span className="text-yellow-400">⏳ {activeCount} 进行中</span>}
+          {doneCount > 0 && <span className="text-emerald-400">✅ {doneCount}</span>}
+          {failedCount > 0 && <span className="text-red-400">❌ {failedCount}</span>}
+          <span className="ml-auto text-[#7a8698]">{groupOpen ? "收起" : "展开"}</span>
+        </button>
+      )}
+      {(!grouped || groupOpen) &&
+        jobs.map((v) => {
+          const active = v.job.status === "queued" || v.job.status === "running";
+          const open = active || expanded.has(v.job.id);
+          return (
+            <AnalyzeJobCard
+              key={v.job.id}
+              job={v.job}
+              onRetry={onRetry}
+              onCancel={onCancel}
+              collapsed={!open}
+              onToggleCollapse={active ? undefined : () => toggle(v.job.id)}
+            />
+          );
+        })}
     </div>
   );
 }

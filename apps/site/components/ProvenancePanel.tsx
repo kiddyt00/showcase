@@ -42,11 +42,14 @@ function fmtMs(ms: number | undefined): string {
 export default function ProvenancePanel({
   provenance,
   slug,
+  seal,
 }: {
   /** metadata.provenance 的原始值（JSON 字符串），由本组件负责解析 */
   provenance: unknown;
   /** 页面 slug（展示用） */
   slug: string;
+  /** 印次章 GenSeal（ReactNode，由 PageView 传入）：渲染在折叠行最右侧（与"诞生记"文字同行） */
+  seal?: React.ReactNode;
 }) {
   const prov = decodeProvenance(provenance);
   if (!prov) return null;
@@ -65,11 +68,22 @@ export default function ProvenancePanel({
 
   return (
     <details className="mb-8 rounded-[var(--radius)] border border-[var(--border)] bg-[var(--card)] text-xs text-muted">
-      <summary className="cursor-pointer select-none px-4 py-2.5 marker:content-none hover:text-[var(--fg)]">
-        <span className="font-medium text-[var(--fg)]">诞生记</span>
-        {" · "}全程 {fmtMs(prov.totalMs)}
-        {" · "}{prov.model || "未知模型"}
-        {retryBits.length ? ` · ${retryBits.join(" / ")}` : ""}
+      <summary className="flex cursor-pointer select-none items-center justify-between gap-3 px-4 py-2.5 marker:content-none hover:text-[var(--fg)]">
+        <span className="min-w-0">
+          <span className="font-medium text-[var(--fg)]">诞生记</span>
+          {" · "}全程 {fmtMs(prov.totalMs)}
+          {" · "}{prov.model || "未知模型"}
+          {retryBits.length ? ` · ${retryBits.join(" / ")}` : ""}
+        </span>
+        {/* 印次章：与"诞生记"文字同行，折叠行最右（点击印章不切换折叠态） */}
+        {seal ? (
+          <span
+            onClick={(e) => e.stopPropagation()}
+            className="flex shrink-0 items-center"
+          >
+            {seal}
+          </span>
+        ) : null}
       </summary>
 
       <div className="space-y-5 border-t border-[var(--border)] px-4 pb-4 pt-4">

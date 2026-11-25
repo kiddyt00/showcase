@@ -30,6 +30,11 @@ export async function generateMetadata({
     openGraph: {
       title: page.title,
       description: page.summary,
+      siteName: "ShowCase", // openGraph 段间浅合并会整段覆盖，子页需自带 siteName
+      type: "article",
+      publishedTime: page.createdAt,
+      // og:image 由同目录 opengraph-image.tsx 约定路由生成（file-based 优先级更高，
+      // 这里的 images 不会生效，保留 icon 是为了不支持 OG 图协议的旧爬虫兜底）
       images: page.icon ? [page.icon] : undefined,
     },
   };

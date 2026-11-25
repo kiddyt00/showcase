@@ -53,6 +53,12 @@ export const metadata: Metadata = {
   },
   description:
     "AI 驱动的知识分享站：开源项目、文章、教程的深度解析与可视化介绍",
+  openGraph: {
+    // openGraph 按段浅合并：子页面未显式定义的同名字段回落到这里（siteName 全站统一）
+    siteName: "ShowCase",
+    type: "website",
+    locale: "zh_CN",
+  },
 };
 
 /** 服务端读当前主题（theme.json），CSS 变量内联到 <html style> —— SSR 无闪烁 */

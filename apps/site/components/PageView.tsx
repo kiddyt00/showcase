@@ -1,4 +1,5 @@
 /** 通用页面模板（editorial 主题变量）：头部阅读时长 + 右侧悬浮 TOC + 章节锚点 */
+import crypto from "node:crypto";
 import type { PageContent } from "@showcase/core/types";
 import Link from "next/link";
 import { Markdown } from "./Markdown";
@@ -10,6 +11,7 @@ import DiagramFrame from "./DiagramFrame";
 import FlowDiagram from "@/components/FlowDiagram";
 import { CountUp } from "./Motion";
 import ProvenancePanel from "./ProvenancePanel";
+import GenSeal from "./GenSeal";
 import { readMinutes, categoryLabel, getCollections } from "@/lib/collections";
 import { PROVENANCE_METADATA_KEY } from "@showcase/core/provenance";
 
@@ -20,6 +22,14 @@ export default function PageView({ page }: { page: PageContent }) {
   }));
   const minutes = readMinutes(page.sections);
   const collection = getCollections().find((c) => c.id === page.category);
+  // 印次章 GenSeal 的生成指纹：sha256(slug + createdAt) 前 6 位（SSR 计算）。
+  // 注：buffer.hexSlice(0,6) 按"字节"切片会得到 12 个 hex 字符，与"前 6 位"不符；
+  // 这里取 digest("hex") 的前 6 个字符（如 "ba7816"），TS 类型也完整
+  const sealHash = crypto
+    .createHash("sha256")
+    .update(page.slug + page.createdAt)
+    .digest("hex")
+    .slice(0, 6);
   // 代码块计数（Markdown 内 ``` 成对出现记一块 + 章节级 code 字段）：
   // listingSeeds[i] = 前 i 节的代码块总数 + 1（本节起始编号），全页 Listing 流水号连续
   const countMdBlocks = (t?: string) => (t ? ((t.match(/```/g)?.length ?? 0) / 2) : 0);
@@ -254,11 +264,22 @@ export default function PageView({ page }: { page: PageContent }) {
         {/* 诞生记：生成过程透明化（折叠面板；无 provenance 的旧页面自动退回一行免责说明） */}
         {page.metadata[PROVENANCE_METADATA_KEY] !== undefined ? (
           <footer className="mt-12">
-            <ProvenancePanel provenance={page.metadata[PROVENANCE_METADATA_KEY]} slug={page.slug} />
+            <ProvenancePanel
+              provenance={page.metadata[PROVENANCE_METADATA_KEY]}
+              slug={page.slug}
+              seal={
+                <GenSeal generator={page.generator} hash={sealHash} />
+              }
+            />
           </footer>
         ) : (
           <footer className="mt-12 border-t border-[var(--border)] pt-4 text-xs text-muted">
-            由 Agent（{page.generator}）自动分析生成 · {page.createdAt.slice(0, 10)}
+            <div className="flex items-center justify-between gap-3">
+              <span>
+                由 Agent（{page.generator}）自动分析生成 · {page.createdAt.slice(0, 10)}
+              </span>
+              <GenSeal generator={page.generator} hash={sealHash} />
+            </div>
           </footer>
         )}
       </article>
