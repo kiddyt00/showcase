@@ -12,6 +12,7 @@ import {
   isoWeekKey,
   listArchiveWeeks,
   type ArchiveWeek,
+  type WeeklyDigest,
 } from "@/lib/weekly";
 
 export const instant = false; // 周五印行页：内容随发布实时更新，避免构建时空库被预渲染成永久空页
@@ -139,9 +140,19 @@ export default async function WeeklyPage({
                 </span>
               </div>
               <div className="mt-6 flex flex-col items-start gap-1">
-                <span className="rounded-[var(--radius)] bg-[var(--accent)] px-4 py-3 font-heading text-2xl font-bold leading-none tracking-wide text-[var(--bg)] shadow-[inset_0_-2px_0_rgb(0_0_0/0.15)] sm:px-6 sm:py-4 sm:text-4xl">
-                  #{issue.risingTag}
-                </span>
+                {/* 铅字块可点：跳转站内 /tags/{tag} 标签聚合页（印刷字模 → 活字检索） */}
+                <Link
+                  href={`/tags/${encodeURIComponent(issue.risingTag)}`}
+                  className="group rounded-[var(--radius)] bg-[var(--accent)] px-4 py-3 font-heading text-2xl font-bold leading-none tracking-wide text-[var(--bg)] shadow-[inset_0_-2px_0_rgb(0_0_0/0.15)] transition-transform hover:-translate-y-0.5 sm:px-6 sm:py-4 sm:text-4xl"
+                >
+                  <span className="inline-block">#{issue.risingTag}</span>
+                  <span
+                    aria-hidden
+                    className="ml-2 hidden text-base font-normal opacity-70 transition-opacity group-hover:opacity-100 sm:inline"
+                  >
+                    ↗
+                  </span>
+                </Link>
                 {/* 排字房小注：铅字块旁的一行批注 */}
                 <span className="mt-1 text-[11px] tracking-[0.08em] text-muted">
                   排字房注：此词新近上版，压倒此前各周
@@ -159,6 +170,23 @@ export default async function WeeklyPage({
               </p>
             </section>
           )}
+
+          {/* 本周快览封面墙：≥2 条才开栏，避免近空板块；每张封面点开新窗口即播（不做自动连播） */}
+          {issue.digests.length >= 2 ? (
+            <section className="reveal mt-14" style={delay(150)}>
+              <div className="flex items-baseline justify-between border-b border-[var(--border)] pb-2">
+                <h2 className="font-heading text-xl font-bold tracking-tight">本周快览</h2>
+                <span className="text-xs text-muted">
+                  {inPress ? "在印 · " : ""}30 秒快览视频 · 共 {issue.digests.length} 条
+                </span>
+              </div>
+              <div className="mt-4 grid gap-4 sm:grid-cols-2">
+                {issue.digests.map((d, i) => (
+                  <DigestCover key={d.slug} digest={d} index={i} />
+                ))}
+              </div>
+            </section>
+          ) : null}
 
           {/* 本周长文卡（本期最长的一篇） */}
           {issue.longest ? (
@@ -223,9 +251,43 @@ export default async function WeeklyPage({
   );
 }
 
-/** 长文卡：标题 + 摘要 + 阅读链接（editorial 版式，同首页 FeaturedCard 语言） */
-function LongReadCard({ post }: { post: PageSummary }) {
+/** 快览封面卡：印刷目录式——序号大字压角 + 栏目/日期行 + 标题 + 摘要 + 播放入口（新窗口播放） */
+function DigestCover({ digest, index }: { digest: WeeklyDigest; index: number }) {
   return (
+    <a
+      href={digest.src}
+      target="_blank"
+      rel="noreferrer"
+      className="card-lift group relative mt-1 block rounded-[var(--radius)] border border-[var(--border)] bg-[var(--card)] p-5 pt-6 hover:border-[var(--accent)]"
+    >
+      {/* 目录序号：与「本期篇目」同一版式语言——印刷目录式淡色大字压在卡片左上 */}
+      <span
+        aria-hidden
+        className="pointer-events-none absolute -top-2 left-3 z-10 rounded-[var(--radius)] bg-[var(--bg)] px-1 font-heading text-2xl font-bold leading-none text-[var(--border)]"
+      >
+        {String(index + 1).padStart(2, "0")}
+      </span>
+      <p className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-muted">
+        <span>{categoryLabel(digest.category)}</span>
+        <span aria-hidden>·</span>
+        <span>⚡ 30 秒快览</span>
+      </p>
+      <h3 className="title-slide mt-2 font-heading text-xl font-bold leading-tight tracking-tight group-hover:text-accent">
+        {digest.title}
+      </h3>
+      <p className="mt-2 line-clamp-2 text-sm leading-relaxed text-muted">{digest.summary}</p>
+      <span className="mt-3 inline-block text-xs font-medium text-accent">
+        新窗口播放 ▶
+        <span aria-hidden className="ml-1 inline-block transition-transform group-hover:translate-x-0.5">
+          ↗
+        </span>
+      </span>
+    </a>
+  );
+}
+
+/** 长文卡：标题 + 摘要 + 阅读链接（editorial 版式，同首页 FeaturedCard 语言） */
+function LongReadCard({ post }: { post: PageSummary }) {  return (
     <Link
       href={`/show/${post.slug}`}
       className="card-lift group mt-4 block rounded-[var(--radius)] border border-[var(--border)] bg-[var(--card)] p-6 hover:border-[var(--accent)]"

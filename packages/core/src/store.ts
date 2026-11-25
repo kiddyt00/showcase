@@ -423,6 +423,29 @@ export function getVideoJob(slug: string, orientation: Orientation): VideoJob | 
   };
 }
 
+/** 已完成的 quick 快览产物行（周印"本周快览"封面墙用） */
+export interface QuickVideoRow {
+  slug: string;
+  video_path: string;
+  created_at: string;
+}
+
+/**
+ * 按 slug 集合查已渲染完成的 quick 快览视频（mode='quick' AND status='done'）。
+ * 空集合直接返回 []；只挑 video_path 非空的行（done 必有产物，防御脏数据）。
+ */
+export function listQuickVideosBySlugs(slugs: string[]): QuickVideoRow[] {
+  if (!slugs.length) return [];
+  return db
+    .prepare(
+      `SELECT slug, video_path, created_at FROM video_jobs
+       WHERE mode = 'quick' AND status = 'done' AND video_path IS NOT NULL
+         AND slug IN (${slugs.map(() => "?").join(",")})
+       ORDER BY created_at DESC`
+    )
+    .all(...slugs) as QuickVideoRow[];
+}
+
 /* ---------- 分析任务 ---------- */
 
 export type AnalyzeStatus = "queued" | "running" | "done" | "failed";

@@ -6,9 +6,21 @@
  * - buildWeeklyIssue：对一次 listPages(50) 快照派生整期印行数据
  * 全部无 LLM、无写入。
  */
-import { getPage, listPages } from "@showcase/core/store";
-import type { PageSummary } from "@showcase/core/store";
+import { getPage, listPages, listQuickVideosBySlugs } from "@showcase/core/store";
+import type { PageSummary, QuickVideoRow } from "@showcase/core/store";
 import type { PageContent } from "@showcase/core/types";
+
+/** 本期已出快览视频的篇目（封面墙卡片：文章元数据 + 播放地址） */
+export interface WeeklyDigest {
+  slug: string;
+  title: string;
+  summary: string;
+  category: string;
+  /** 播放地址：/videos/{slug}-landscape-quick.mp4 */
+  src: string;
+  /** video_jobs.created_at（快览渲染完成时间） */
+  createdAt: string;
+}
 
 /** 一期周印的全部印行数据 */
 export interface WeeklyIssue {
@@ -30,6 +42,8 @@ export interface WeeklyIssue {
   risingTagCount: number;
   /** 本期正文字数最多的篇目（getPage 取 sections 统计）；空则 null */
   longest: PageSummary | null;
+  /** 本周快览：本期篇目中已出 quick 视频的封面墙数据（<2 条时前端不渲染该板块） */
+  digests: WeeklyDigest[];
   /** 下期印行日：refDate 之后的下一个周五（refDate 为周五则下周五），ISO "YYYY-MM-DD" */
   nextIssueDate: string;
 }
@@ -202,6 +216,23 @@ export function buildWeeklyIssue(refDate: Date): WeeklyIssue {
     }
   }
 
+  // 本周快览：本期篇目中已渲染完成的 quick 视频目录墙（一张封面 = 一篇 30 秒快览）
+  const quickRows = listQuickVideosBySlugs(posts.map((p) => p.slug));
+  const bySlug = new Map(posts.map((p) => [p.slug, p]));
+  const digests: WeeklyDigest[] = quickRows
+    .filter((r): r is QuickVideoRow & { slug: string } => bySlug.has(r.slug))
+    .map((r) => {
+      const p = bySlug.get(r.slug)!;
+      return {
+        slug: p.slug,
+        title: p.title,
+        summary: p.summary,
+        category: p.category,
+        src: `/videos/${p.slug}-landscape-quick.mp4`,
+        createdAt: r.created_at,
+      };
+    });
+
   // 卷号：开站年（快照内最早一篇）到今年的年差 + 1
   const earliest = pages.reduce<PageContent | null>(
     (acc, p) => (acc === null || p.createdAt < acc.createdAt ? p : acc),
@@ -227,6 +258,7 @@ export function buildWeeklyIssue(refDate: Date): WeeklyIssue {
     risingTag,
     risingTagCount,
     longest,
+    digests,
     nextIssueDate,
   };
 }

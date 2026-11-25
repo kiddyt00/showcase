@@ -8,6 +8,7 @@ import { resolveTheme, themeStyle } from "@/theme/server";
 import { ThemeProvider } from "@/theme/ThemeContext";
 import ThemeSwitcher from "@/theme/ThemeSwitcher";
 import MastheadDate from "@/components/MastheadDate";
+import LastReadBar from "@/components/LastReadBar";
 import { getCollections } from "@/lib/collections";
 
 const geistSans = Geist({
@@ -105,6 +106,8 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
               </nav>
             </div>
           </header>
+          {/* 回访钩子：跨访问的"上次读到哪"，仅 localStorage 命中时出现（header 之下、正文之上） */}
+          <LastReadBar />
           <main className="flex-1">{children}</main>
           <footer className="border-t border-border">
             <div className="mx-auto max-w-5xl px-4">
@@ -115,6 +118,13 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
               <div className="flex flex-wrap items-center justify-between gap-3 py-5 text-xs text-muted">
                 <p>ShowCase · AI 驱动的通用内容分析展示平台</p>
                 <div className="flex items-center gap-4">
+                  <a
+                    href="/feed.xml"
+                    type="application/rss+xml"
+                    className="link-editorial hover:text-accent"
+                  >
+                    RSS
+                  </a>
                   <Link href="/search" className="link-editorial hover:text-accent">
                     搜索
                   </Link>
